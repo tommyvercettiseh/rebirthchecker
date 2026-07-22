@@ -10,7 +10,7 @@ from typing import Callable
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
-from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageTk
+from PIL import Image, ImageDraw, ImageEnhance, ImageTk
 
 try:
     import pystray
@@ -18,7 +18,7 @@ except ImportError:
     pystray = None
 
 APP_NAME = "Rebirth Checker"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.2.1"
 DEFAULT_MAPS = ["Rebirth Island", "Fortune's Keep", "Haven's Hollow"]
 DEFAULT_DURATION = 600
 REBIRTH_NAME = "Rebirth Island"
@@ -56,6 +56,7 @@ class Settings:
             raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
             raw.setdefault("maps", DEFAULT_MAPS.copy())
             raw.setdefault("image_paths", defaults)
+            raw["current_index"] = int(raw.get("current_index", 0)) % max(1, len(raw["maps"]))
             return cls(**raw)
         except Exception:
             logging.exception("Config laden mislukt")
@@ -95,6 +96,12 @@ class RotationEngine:
 
     def skip(self, direction: int = 1) -> None:
         self.settings.current_index = (self.settings.current_index + direction) % len(self.settings.maps)
+        self.settings.remaining_seconds = self.settings.map_duration
+        self.settings.save()
+        self.callback()
+
+    def set_current(self, index: int) -> None:
+        self.settings.current_index = index % len(self.settings.maps)
         self.settings.remaining_seconds = self.settings.map_duration
         self.settings.save()
         self.callback()
@@ -140,7 +147,7 @@ def send_rebirth_notification(settings: Settings) -> None:
 class RebirthApp:
     WIDTH = 470
     HEIGHT = 265
-    SETTINGS_WIDTH = 340
+    SETTINGS_WIDTH = 360
     BG = "#080d11"
     PANEL = "#10171d"
     TEXT = "#f3f5f6"
@@ -186,29 +193,29 @@ class RebirthApp:
         self.time_label = tk.Label(self.topbar, bg="#151c21", fg=self.TEXT, font=("Segoe UI Semibold", 11))
         self.time_label.pack(side="right", padx=(4, 8))
         self.gear = tk.Button(self.topbar, text="⚙", command=self.toggle_settings, bg="#151c21", fg=self.TEXT,
-                              activebackground="#202a31", activeforeground=self.GREEN, bd=0, font=("Segoe UI", 12), cursor="hand2")
+                              activebackground="#202a31", activeforeground=self.GREEN, bd=0,
+                              font=("Segoe UI", 12), cursor="hand2")
         self.gear.pack(side="right")
         self.close_btn = tk.Button(self.topbar, text="×", command=self.hide_to_tray, bg="#151c21", fg=self.MUTED,
-                                   activebackground="#202a31", activeforeground=self.TEXT, bd=0, font=("Segoe UI", 13), cursor="hand2")
+                                   activebackground="#202a31", activeforeground=self.TEXT, bd=0,
+                                   font=("Segoe UI", 13), cursor="hand2")
         self.close_btn.pack(side="right", padx=(0, 2))
 
         self.next_box = tk.Frame(self.card, bg="#11181d", highlightbackground="#51616c", highlightthickness=2)
         self.next_box.place(x=290, y=48, width=165, height=96)
-        self.next_title = tk.Label(self.next_box, text="NEXT MAP", bg="#11181d", fg=self.TEXT,
-                                   font=("Segoe UI Semibold", 9))
-        self.next_title.place(x=7, y=4)
+        tk.Label(self.next_box, text="NEXT MAP", bg="#11181d", fg=self.TEXT,
+                 font=("Segoe UI Semibold", 9)).place(x=7, y=4)
         self.next_image = tk.Label(self.next_box, bg="#11181d")
         self.next_image.place(x=6, y=24, width=151, height=48)
         self.next_name = tk.Label(self.next_box, bg="#11181d", fg=self.TEXT, anchor="w",
                                   font=("Segoe UI Semibold", 9))
         self.next_name.place(x=7, y=73, width=150, height=18)
 
-        self.map_label = tk.Label(self.card, bg="#05090c", fg=self.TEXT, anchor="w", padx=14,
-                                  font=("Segoe UI Semibold", 19))
+        self.map_label = tk.Frame(self.card, bg="#05090c")
         self.map_label.place(x=0, y=213, width=self.WIDTH, height=52)
         self.status_dot = tk.Label(self.map_label, text="●", bg="#05090c", fg=self.GREEN,
                                    font=("Segoe UI", 15))
-        self.status_dot.pack(side="left")
+        self.status_dot.pack(side="left", padx=(14, 0))
         self.map_text = tk.Label(self.map_label, bg="#05090c", fg=self.TEXT,
                                  font=("Segoe UI Semibold", 19))
         self.map_text.pack(side="left", padx=(6, 0))
@@ -226,7 +233,7 @@ class RebirthApp:
     def _build_settings(self) -> None:
         p = self.settings_panel
         tk.Label(p, text="ROTATION SETTINGS", bg=self.PANEL, fg=self.TEXT,
-                 font=("Segoe UI Semibold", 14)).pack(anchor="w", padx=18, pady=(18, 12))
+                 font=("Segoe UI Semibold", 14)).pack(anchor="w", padx=18, pady=(16, 10))
         tk.Label(p, text="Resterende tijd", bg=self.PANEL, fg=self.MUTED).pack(anchor="w", padx=18)
         self.time_entry = tk.Entry(p, bg="#172128", fg=self.TEXT, insertbackground=self.TEXT,
                                    relief="flat", font=("Segoe UI", 13))
@@ -234,17 +241,29 @@ class RebirthApp:
         tk.Button(p, text="TIJD TOEPASSEN", command=self.apply_time, bg="#26343d", fg=self.TEXT,
                   activebackground="#31434e", activeforeground=self.TEXT, bd=0, pady=7).pack(fill="x", padx=18)
 
-        tk.Label(p, text="Maps in rotatie", bg=self.PANEL, fg=self.MUTED).pack(anchor="w", padx=18, pady=(16, 5))
+        tk.Label(p, text="Maps in rotatie", bg=self.PANEL, fg=self.MUTED).pack(anchor="w", padx=18, pady=(13, 5))
         self.maps_list = tk.Listbox(p, bg="#172128", fg=self.TEXT, selectbackground="#35511f",
-                                    selectforeground=self.GREEN, relief="flat", height=5, font=("Segoe UI", 10))
+                                    selectforeground=self.GREEN, relief="flat", height=4, font=("Segoe UI", 10),
+                                    exportselection=False)
         self.maps_list.pack(fill="x", padx=18)
-        row = tk.Frame(p, bg=self.PANEL)
-        row.pack(fill="x", padx=18, pady=7)
-        for text, cmd in [("+ MAP", self.add_map), ("VERWIJDER", self.remove_map), ("↑", lambda: self.move_map(-1)), ("↓", lambda: self.move_map(1))]:
-            tk.Button(row, text=text, command=cmd, bg="#26343d", fg=self.TEXT, bd=0, padx=8, pady=5).pack(side="left", padx=(0, 5))
+        self.maps_list.bind("<Double-Button-1>", lambda _e: self.set_current_map())
 
-        tk.Button(p, text="AFBEELDING KOPPELEN", command=self.choose_image, bg="#26343d", fg=self.TEXT,
-                  activebackground="#31434e", bd=0, pady=7).pack(fill="x", padx=18, pady=(2, 12))
+        row = tk.Frame(p, bg=self.PANEL)
+        row.pack(fill="x", padx=18, pady=(7, 5))
+        buttons = [
+            ("+ MAP", self.add_map),
+            ("VERWIJDER", self.remove_map),
+            ("OMHOOG", lambda: self.move_map(-1)),
+            ("OMLAAG", lambda: self.move_map(1)),
+        ]
+        for text, cmd in buttons:
+            tk.Button(row, text=text, command=cmd, bg="#26343d", fg=self.TEXT, bd=0,
+                      padx=7, pady=5).pack(side="left", padx=(0, 4))
+
+        tk.Button(p, text="MAAK HUIDIGE MAP", command=self.set_current_map, bg="#35511f", fg=self.GREEN,
+                  activebackground="#456b28", activeforeground=self.TEXT, bd=0, pady=7).pack(fill="x", padx=18, pady=(0, 5))
+        tk.Button(p, text="AFBEELDING KIEZEN / WIJZIGEN", command=self.choose_image, bg="#26343d", fg=self.TEXT,
+                  activebackground="#31434e", activeforeground=self.TEXT, bd=0, pady=7).pack(fill="x", padx=18, pady=(0, 9))
 
         self.top_var = tk.BooleanVar(value=self.settings.always_on_top)
         self.notify_var = tk.BooleanVar(value=self.settings.notify_rebirth)
@@ -255,11 +274,11 @@ class RebirthApp:
                        bg=self.PANEL, fg=self.TEXT, activebackground=self.PANEL, activeforeground=self.TEXT,
                        selectcolor="#172128").pack(anchor="w", padx=18)
         tk.Button(p, text="MOBIELE PUSH INSTELLEN", command=self.configure_ntfy, bg="#26343d", fg=self.TEXT,
-                  bd=0, pady=7).pack(fill="x", padx=18, pady=(10, 5))
+                  bd=0, pady=6).pack(fill="x", padx=18, pady=(7, 4))
         tk.Button(p, text="TEST PUSH", command=self.test_push, bg="#35511f", fg=self.GREEN,
-                  activebackground="#456b28", activeforeground=self.TEXT, bd=0, pady=7).pack(fill="x", padx=18)
-        tk.Label(p, text="Dubbelklik kaart: start/pauze\nRechtsklik kaart: volgende map",
-                 bg=self.PANEL, fg=self.MUTED, justify="left", font=("Segoe UI", 9)).pack(anchor="w", padx=18, pady=14)
+                  activebackground="#456b28", activeforeground=self.TEXT, bd=0, pady=6).pack(fill="x", padx=18)
+        tk.Label(p, text="Selecteer een map en gebruik de knoppen.\nDubbelklik een map om die direct actief te maken.",
+                 bg=self.PANEL, fg=self.MUTED, justify="left", font=("Segoe UI", 8)).pack(anchor="w", padx=18, pady=8)
 
     def start_drag(self, event) -> None:
         self._drag_x = event.x_root - self.root.winfo_x()
@@ -276,6 +295,10 @@ class RebirthApp:
         else:
             self.settings_panel.pack_forget()
             self.root.geometry(f"{self.WIDTH}x{self.HEIGHT}")
+
+    def selected_map_index(self) -> int | None:
+        selected = self.maps_list.curselection()
+        return selected[0] if selected else None
 
     def apply_time(self) -> None:
         raw = self.time_entry.get().strip()
@@ -299,40 +322,70 @@ class RebirthApp:
         if name and name.strip():
             self.settings.maps.append(name.strip())
             self.settings.save()
+            self.refresh_maps_list(len(self.settings.maps) - 1)
             self.render()
 
     def remove_map(self) -> None:
-        selected = self.maps_list.curselection()
-        if selected and len(self.settings.maps) > 1:
-            self.settings.maps.pop(selected[0])
-            self.settings.current_index %= len(self.settings.maps)
-            self.settings.save()
-            self.render()
-
-    def move_map(self, delta: int) -> None:
-        selected = self.maps_list.curselection()
-        if not selected:
-            return
-        old = selected[0]
-        new = max(0, min(len(self.settings.maps) - 1, old + delta))
-        if old != new:
-            item = self.settings.maps.pop(old)
-            self.settings.maps.insert(new, item)
-            self.settings.save()
-            self.render()
-            self.maps_list.selection_set(new)
-
-    def choose_image(self) -> None:
-        selected = self.maps_list.curselection()
-        if not selected:
+        index = self.selected_map_index()
+        if index is None:
             messagebox.showinfo(APP_NAME, "Selecteer eerst een map.")
             return
-        path = filedialog.askopenfilename(parent=self.root, filetypes=[("Afbeeldingen", "*.png *.jpg *.jpeg *.webp")])
+        if len(self.settings.maps) <= 1:
+            messagebox.showinfo(APP_NAME, "Er moet minimaal één map blijven staan.")
+            return
+        current_name = self.engine.current_map
+        removed = self.settings.maps.pop(index)
+        self.settings.image_paths.pop(removed, None)
+        if current_name in self.settings.maps:
+            self.settings.current_index = self.settings.maps.index(current_name)
+        else:
+            self.settings.current_index = min(index, len(self.settings.maps) - 1)
+        self.settings.save()
+        self.refresh_maps_list(min(index, len(self.settings.maps) - 1))
+        self.render()
+
+    def move_map(self, delta: int) -> None:
+        index = self.selected_map_index()
+        if index is None:
+            messagebox.showinfo(APP_NAME, "Selecteer eerst een map.")
+            return
+        new_index = max(0, min(len(self.settings.maps) - 1, index + delta))
+        if new_index == index:
+            return
+        current_name = self.engine.current_map
+        item = self.settings.maps.pop(index)
+        self.settings.maps.insert(new_index, item)
+        self.settings.current_index = self.settings.maps.index(current_name)
+        self.settings.save()
+        self.refresh_maps_list(new_index)
+        self.render()
+
+    def set_current_map(self) -> None:
+        index = self.selected_map_index()
+        if index is None:
+            messagebox.showinfo(APP_NAME, "Selecteer eerst de map die nu speelt.")
+            return
+        self.engine.set_current(index)
+        self.refresh_maps_list(index)
+
+    def choose_image(self) -> None:
+        index = self.selected_map_index()
+        if index is None:
+            messagebox.showinfo(APP_NAME, "Selecteer eerst een map in de lijst.")
+            return
+        map_name = self.settings.maps[index]
+        path = filedialog.askopenfilename(
+            parent=self.root,
+            title=f"Kies afbeelding voor {map_name}",
+            filetypes=[("Afbeeldingen", "*.png *.jpg *.jpeg *.webp *.bmp"), ("Alle bestanden", "*.*")],
+        )
         if path:
-            self.settings.image_paths[self.settings.maps[selected[0]]] = path
+            self.settings.image_paths[map_name] = path
             self.settings.save()
             self._photos.clear()
+            self.refresh_maps_list(index)
             self.render()
+            messagebox.showinfo(APP_NAME, f"Afbeelding voor {map_name} is opgeslagen.")
 
     def save_options(self) -> None:
         self.settings.always_on_top = self.top_var.get()
@@ -358,6 +411,23 @@ class RebirthApp:
             self._render_pending = True
             self.root.after(0, self.render)
 
+    def refresh_maps_list(self, selected_index: int | None = None) -> None:
+        if selected_index is None:
+            selected_index = self.selected_map_index()
+        desired = []
+        for index, name in enumerate(self.settings.maps, 1):
+            marker = "▶" if index - 1 == self.settings.current_index else str(index)
+            desired.append(f"{marker}  {name}")
+        existing = list(self.maps_list.get(0, tk.END))
+        if existing != desired:
+            self.maps_list.delete(0, tk.END)
+            for item in desired:
+                self.maps_list.insert(tk.END, item)
+        if selected_index is not None and 0 <= selected_index < len(self.settings.maps):
+            self.maps_list.selection_clear(0, tk.END)
+            self.maps_list.selection_set(selected_index)
+            self.maps_list.activate(selected_index)
+
     def _fallback_image(self, name: str, size: tuple[int, int]) -> Image.Image:
         image = Image.new("RGB", size, "#18242c")
         draw = ImageDraw.Draw(image)
@@ -369,13 +439,15 @@ class RebirthApp:
         return image
 
     def _load_photo(self, name: str, size: tuple[int, int], darken: float = 0.72) -> ImageTk.PhotoImage:
-        key = f"{name}|{size}|{darken}"
+        path_value = self.settings.image_paths.get(name, "")
+        key = f"{name}|{path_value}|{size}|{darken}"
         if key in self._photos:
             return self._photos[key]
-        path = Path(self.settings.image_paths.get(name, ""))
+        path = Path(path_value)
         try:
             image = Image.open(path).convert("RGB") if path.exists() else self._fallback_image(name, size)
         except Exception:
+            logging.exception("Afbeelding laden mislukt voor %s", name)
             image = self._fallback_image(name, size)
         target_ratio = size[0] / size[1]
         ratio = image.width / image.height
@@ -412,11 +484,7 @@ class RebirthApp:
         self.status_dot.configure(fg=self.GREEN if is_rebirth else self.AMBER)
         self.next_name.configure(text=next_map.upper())
         self.playing_label.configure(text="CURRENTLY PLAYING" if self.engine.running else "PAUSED • DOUBLE CLICK TO START")
-
-        self.maps_list.delete(0, tk.END)
-        for index, name in enumerate(self.settings.maps, 1):
-            prefix = "●" if name.lower() == REBIRTH_NAME.lower() else str(index)
-            self.maps_list.insert(tk.END, f"{prefix}  {name}")
+        self.refresh_maps_list()
         self.root.title(f"{current} • {minutes:02d}:{seconds:02d}")
 
     def _tray_image(self):
