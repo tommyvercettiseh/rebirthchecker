@@ -28,7 +28,7 @@ if not exist .venv\Scripts\python.exe (
 .venv\Scripts\python.exe -m pip install -r requirements.txt >> logs\launcher.log 2>&1
 if errorlevel 1 goto :error
 
-start "Rebirth Checker" .venv\Scripts\pythonw.exe app.py
+start "Rebirth Checker" .venv\Scripts\pythonw.exe app_v023.py
 exit /b 0
 
 :error
