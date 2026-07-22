@@ -1,27 +1,34 @@
 @echo off
-setlocal
+setlocal EnableExtensions
 cd /d "%~dp0"
 if not exist logs mkdir logs
 
-where py >nul 2>nul
-if errorlevel 1 (
-  echo Python is niet gevonden. Installeer Python 3.11 of nieuwer vanaf python.org.
+set "PYTHON_CMD="
+where py >nul 2>nul && set "PYTHON_CMD=py"
+if not defined PYTHON_CMD (
+  where python >nul 2>nul && set "PYTHON_CMD=python"
+)
+
+if not defined PYTHON_CMD (
+  echo Python is niet gevonden of staat niet in PATH.
+  echo Open Python en kies bij Modify ook "Add Python to environment variables".
+  echo.
+  echo Controleer daarna met: python --version
   pause
   exit /b 1
 )
 
-if not exist .venv (
+if not exist .venv\Scripts\python.exe (
   echo Virtuele omgeving wordt aangemaakt...
-  py -m venv .venv >> logs\launcher.log 2>&1
+  %PYTHON_CMD% -m venv .venv >> logs\launcher.log 2>&1
   if errorlevel 1 goto :error
 )
 
-call .venv\Scripts\activate.bat
-python -m pip install --upgrade pip >> logs\launcher.log 2>&1
-pip install -r requirements.txt >> logs\launcher.log 2>&1
+.venv\Scripts\python.exe -m pip install --upgrade pip >> logs\launcher.log 2>&1
+.venv\Scripts\python.exe -m pip install -r requirements.txt >> logs\launcher.log 2>&1
 if errorlevel 1 goto :error
 
-start "Rebirth Checker" pythonw app.py
+start "Rebirth Checker" .venv\Scripts\pythonw.exe app.py
 exit /b 0
 
 :error
