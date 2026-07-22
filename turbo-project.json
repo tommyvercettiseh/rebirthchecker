@@ -1,0 +1,15 @@
+{
+  "name": "Rebirth Checker",
+  "slug": "rebirthchecker",
+  "version": "0.1.0",
+  "description": "Windows-widget voor Resurgence maprotaties met Rebirth-highlight en mobiele pushmeldingen.",
+  "preview": "docs/previews/latest.png",
+  "start_command": "Start Rebirth Checker.bat",
+  "default_port": 0,
+  "health_url": "",
+  "project_type": "windows-desktop-widget",
+  "entrypoint": "app.py",
+  "exe_build_command": "Build EXE.bat",
+  "supports_system_tray": true,
+  "supports_mobile_push": true
+}
