@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ctypes
 import json
 import logging
+import subprocess
 import threading
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -18,14 +20,15 @@ except ImportError:
     pystray = None
 
 APP_NAME = "Rebirth Checker"
-APP_VERSION = "0.2.2"
+APP_VERSION = "0.3.0"
 DEFAULT_MAPS = ["Rebirth Island", "Fortune's Keep", "Haven's Hollow"]
 DEFAULT_DURATION = 600
 REBIRTH_NAME = "Rebirth Island"
+BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path.home() / ".rebirthchecker"
 CONFIG_PATH = DATA_DIR / "config.json"
 LOG_PATH = DATA_DIR / "rebirthchecker.log"
-ASSET_DIR = Path(__file__).resolve().parent / "assets"
+ASSET_DIR = BASE_DIR / "assets"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 ASSET_DIR.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(filename=LOG_PATH, level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -42,6 +45,12 @@ class Settings:
     ntfy_topic: str = ""
     ntfy_server: str = "https://ntfy.sh"
     notify_rebirth: bool = True
+    locked: bool = False
+    window_x: int = 80
+    window_y: int = 80
+    opacity: int = 94
+    corner_radius: int = 18
+    launch_with_gfn: bool = False
 
     @classmethod
     def load(cls) -> "Settings":
@@ -56,6 +65,12 @@ class Settings:
             raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
             raw.setdefault("maps", DEFAULT_MAPS.copy())
             raw.setdefault("image_paths", defaults)
+            raw.setdefault("locked", False)
+            raw.setdefault("window_x", 80)
+            raw.setdefault("window_y", 80)
+            raw.setdefault("opacity", 94)
+            raw.setdefault("corner_radius", 18)
+            raw.setdefault("launch_with_gfn", False)
             raw["current_index"] = int(raw.get("current_index", 0)) % max(1, len(raw["maps"]))
             return cls(**raw)
         except Exception:
@@ -147,8 +162,8 @@ def send_rebirth_notification(settings: Settings) -> None:
 class RebirthApp:
     WIDTH = 470
     HEIGHT = 265
-    SETTINGS_WIDTH = 360
-    SETTINGS_HEIGHT = 610
+    SETTINGS_WIDTH = 410
+    SETTINGS_HEIGHT = 760
     BG = "#080d11"
     PANEL = "#10171d"
     TEXT = "#f3f5f6"
@@ -162,8 +177,9 @@ class RebirthApp:
         self.root.title(APP_NAME)
         self.root.overrideredirect(True)
         self.root.configure(bg=self.BG)
-        self.root.geometry(f"{self.WIDTH}x{self.HEIGHT}+80+80")
+        self.root.geometry(f"{self.WIDTH}x{self.HEIGHT}+{self.settings.window_x}+{self.settings.window_y}")
         self.root.attributes("-topmost", self.settings.always_on_top)
+        self.root.attributes("-alpha", max(0.65, min(1.0, self.settings.opacity / 100)))
         self.engine = RotationEngine(self.settings, self.request_render)
         self.settings_open = False
         self._render_pending = False
@@ -172,6 +188,7 @@ class RebirthApp:
         self._photos: dict[str, ImageTk.PhotoImage] = {}
         self.tray_icon = None
         self._build_ui()
+        self.root.after(100, self.apply_corner_radius)
         self.render()
         self._start_tray()
 
@@ -224,83 +241,142 @@ class RebirthApp:
         for widget in (self.topbar, self.playing_label, self.time_label):
             widget.bind("<ButtonPress-1>", self.start_drag)
             widget.bind("<B1-Motion>", self.do_drag)
+            widget.bind("<ButtonRelease-1>", self.end_drag)
         self.image_label.bind("<Double-Button-1>", lambda _e: self.toggle_timer())
         self.card.bind("<Button-3>", lambda _e: self.engine.skip())
 
         self.settings_panel = tk.Frame(self.shell, bg=self.PANEL, width=self.SETTINGS_WIDTH,
                                        height=self.SETTINGS_HEIGHT)
         self.settings_panel.pack_propagate(False)
-        self._build_settings()
+        self._build_scrollable_settings()
+
+    def _build_scrollable_settings(self) -> None:
+        canvas = tk.Canvas(self.settings_panel, bg=self.PANEL, highlightthickness=0)
+        scrollbar = tk.Scrollbar(self.settings_panel, orient="vertical", command=canvas.yview)
+        self.settings_content = tk.Frame(canvas, bg=self.PANEL)
+        self.settings_content.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=self.settings_content, anchor="nw", width=self.SETTINGS_WIDTH - 18)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units") if self.settings_open else None)
+        self._build_settings(self.settings_content)
 
     def _button(self, parent, text: str, command, bg: str = "#26343d", fg: str | None = None):
         return tk.Button(parent, text=text, command=command, bg=bg, fg=fg or self.TEXT,
                          activebackground="#31434e", activeforeground=self.TEXT,
-                         bd=0, padx=7, pady=6, cursor="hand2")
+                         bd=0, padx=7, pady=7, cursor="hand2")
 
-    def _build_settings(self) -> None:
-        p = self.settings_panel
+    def _build_settings(self, p: tk.Frame) -> None:
         header = tk.Frame(p, bg=self.PANEL)
-        header.pack(fill="x", padx=18, pady=(16, 10))
+        header.pack(fill="x", padx=20, pady=(18, 12))
         tk.Label(header, text="ROTATION SETTINGS", bg=self.PANEL, fg=self.TEXT,
                  font=("Segoe UI Semibold", 14)).pack(side="left")
         tk.Label(header, text=f"v{APP_VERSION}", bg=self.PANEL, fg=self.GREEN,
                  font=("Segoe UI Semibold", 10)).pack(side="right", pady=(4, 0))
 
-        tk.Label(p, text="Resterende tijd", bg=self.PANEL, fg=self.MUTED).pack(anchor="w", padx=18)
+        tk.Label(p, text="Resterende tijd", bg=self.PANEL, fg=self.MUTED).pack(anchor="w", padx=20)
         self.time_entry = tk.Entry(p, bg="#172128", fg=self.TEXT, insertbackground=self.TEXT,
                                    relief="flat", font=("Segoe UI", 13))
-        self.time_entry.pack(fill="x", padx=18, pady=(5, 6), ipady=6)
-        self._button(p, "TIJD TOEPASSEN", self.apply_time).pack(fill="x", padx=18)
+        self.time_entry.pack(fill="x", padx=20, pady=(5, 6), ipady=7)
+        self._button(p, "TIJD TOEPASSEN", self.apply_time).pack(fill="x", padx=20)
 
-        tk.Label(p, text="Maps in rotatie", bg=self.PANEL, fg=self.MUTED).pack(anchor="w", padx=18, pady=(13, 5))
+        tk.Label(p, text="Maps in rotatie", bg=self.PANEL, fg=self.MUTED).pack(anchor="w", padx=20, pady=(15, 5))
         self.maps_list = tk.Listbox(p, bg="#172128", fg=self.TEXT, selectbackground="#35511f",
                                     selectforeground=self.GREEN, relief="flat", height=5,
                                     font=("Segoe UI", 10), exportselection=False)
-        self.maps_list.pack(fill="x", padx=18)
+        self.maps_list.pack(fill="x", padx=20)
         self.maps_list.bind("<Double-Button-1>", lambda _e: self.set_current_map())
-
-        row1 = tk.Frame(p, bg=self.PANEL)
-        row1.pack(fill="x", padx=18, pady=(7, 4))
-        self._button(row1, "+ MAP", self.add_map).pack(side="left", expand=True, fill="x", padx=(0, 3))
-        self._button(row1, "VERWIJDER", self.remove_map).pack(side="left", expand=True, fill="x", padx=(3, 0))
-
-        row2 = tk.Frame(p, bg=self.PANEL)
-        row2.pack(fill="x", padx=18, pady=(0, 6))
-        self._button(row2, "↑ OMHOOG", lambda: self.move_map(-1)).pack(side="left", expand=True, fill="x", padx=(0, 3))
-        self._button(row2, "↓ OMLAAG", lambda: self.move_map(1)).pack(side="left", expand=True, fill="x", padx=(3, 0))
-
-        self._button(p, "MAAK HUIDIGE MAP", self.set_current_map, bg="#35511f", fg=self.GREEN).pack(
-            fill="x", padx=18, pady=(0, 6))
-        self._button(p, "🖼  AFBEELDING KIEZEN / WIJZIGEN", self.choose_image).pack(
-            fill="x", padx=18, pady=(0, 12))
-
-        self.image_status = tk.Label(p, text="Selecteer een map om de gekoppelde afbeelding te zien.",
-                                     bg=self.PANEL, fg=self.MUTED, justify="left", anchor="w",
-                                     wraplength=self.SETTINGS_WIDTH - 36, font=("Segoe UI", 8))
-        self.image_status.pack(fill="x", padx=18, pady=(0, 10))
         self.maps_list.bind("<<ListboxSelect>>", lambda _e: self.update_image_status())
 
+        row1 = tk.Frame(p, bg=self.PANEL)
+        row1.pack(fill="x", padx=20, pady=(7, 4))
+        self._button(row1, "+ MAP", self.add_map).pack(side="left", expand=True, fill="x", padx=(0, 3))
+        self._button(row1, "VERWIJDER", self.remove_map).pack(side="left", expand=True, fill="x", padx=(3, 0))
+        row2 = tk.Frame(p, bg=self.PANEL)
+        row2.pack(fill="x", padx=20, pady=(0, 7))
+        self._button(row2, "↑ OMHOOG", lambda: self.move_map(-1)).pack(side="left", expand=True, fill="x", padx=(0, 3))
+        self._button(row2, "↓ OMLAAG", lambda: self.move_map(1)).pack(side="left", expand=True, fill="x", padx=(3, 0))
+        self._button(p, "MAAK HUIDIGE MAP", self.set_current_map, bg="#35511f", fg=self.GREEN).pack(fill="x", padx=20, pady=(0, 7))
+        self._button(p, "AFBEELDING KIEZEN / WIJZIGEN", self.choose_image).pack(fill="x", padx=20)
+
+        self.image_status = tk.Label(p, text="Selecteer een map om de afbeelding te zien.", bg=self.PANEL,
+                                     fg=self.MUTED, justify="left", anchor="w", wraplength=350,
+                                     font=("Segoe UI", 8))
+        self.image_status.pack(fill="x", padx=20, pady=(7, 14))
+
+        tk.Label(p, text="POSITIE & STARTGEDRAG", bg=self.PANEL, fg=self.TEXT,
+                 font=("Segoe UI Semibold", 11)).pack(anchor="w", padx=20, pady=(4, 7))
+        self.lock_var = tk.BooleanVar(value=self.settings.locked)
+        self.gfn_var = tk.BooleanVar(value=self.settings.launch_with_gfn)
         self.top_var = tk.BooleanVar(value=self.settings.always_on_top)
         self.notify_var = tk.BooleanVar(value=self.settings.notify_rebirth)
+
+        tk.Checkbutton(p, text="Widgetpositie vergrendelen", variable=self.lock_var, command=self.save_options,
+                       bg=self.PANEL, fg=self.TEXT, activebackground=self.PANEL, activeforeground=self.TEXT,
+                       selectcolor="#172128").pack(anchor="w", padx=20)
+        self.position_label = tk.Label(p, bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 9))
+        self.position_label.pack(anchor="w", padx=40, pady=(0, 6))
+        self._button(p, "POSITIE OPNIEUW OPSLAAN", self.save_current_position).pack(fill="x", padx=20, pady=(0, 8))
+
+        tk.Checkbutton(p, text="Starten wanneer GeForce NOW draait", variable=self.gfn_var, command=self.save_options,
+                       bg=self.PANEL, fg=self.TEXT, activebackground=self.PANEL, activeforeground=self.TEXT,
+                       selectcolor="#172128").pack(anchor="w", padx=20)
+        self._button(p, "INSTALLEER GEFORCE NOW WATCHER", self.install_watcher, bg="#203342").pack(fill="x", padx=20, pady=(5, 5))
+        tk.Label(p, text="De watcher start met Windows en opent deze widget pas zodra GeForce NOW draait.",
+                 bg=self.PANEL, fg=self.MUTED, justify="left", wraplength=350,
+                 font=("Segoe UI", 8)).pack(anchor="w", padx=20, pady=(0, 12))
+
+        tk.Label(p, text="WEERGAVE", bg=self.PANEL, fg=self.TEXT,
+                 font=("Segoe UI Semibold", 11)).pack(anchor="w", padx=20, pady=(4, 7))
         tk.Checkbutton(p, text="Altijd bovenop", variable=self.top_var, command=self.save_options,
                        bg=self.PANEL, fg=self.TEXT, activebackground=self.PANEL, activeforeground=self.TEXT,
-                       selectcolor="#172128").pack(anchor="w", padx=18)
+                       selectcolor="#172128").pack(anchor="w", padx=20)
         tk.Checkbutton(p, text="Push bij Rebirth", variable=self.notify_var, command=self.save_options,
                        bg=self.PANEL, fg=self.TEXT, activebackground=self.PANEL, activeforeground=self.TEXT,
-                       selectcolor="#172128").pack(anchor="w", padx=18)
-        self._button(p, "MOBIELE PUSH INSTELLEN", self.configure_ntfy).pack(fill="x", padx=18, pady=(10, 4))
-        self._button(p, "TEST PUSH", self.test_push, bg="#35511f", fg=self.GREEN).pack(fill="x", padx=18)
+                       selectcolor="#172128").pack(anchor="w", padx=20)
 
-        tk.Label(p, text="Dubbelklik op een map om die direct als huidige map te zetten.",
-                 bg=self.PANEL, fg=self.MUTED, justify="left", wraplength=self.SETTINGS_WIDTH - 36,
-                 font=("Segoe UI", 8)).pack(anchor="w", padx=18, pady=(12, 0))
+        tk.Label(p, text="Hoekafronding", bg=self.PANEL, fg=self.MUTED).pack(anchor="w", padx=20, pady=(9, 0))
+        self.radius_var = tk.IntVar(value=self.settings.corner_radius)
+        self.radius_value = tk.Label(p, text=f"{self.settings.corner_radius} px", bg=self.PANEL, fg=self.GREEN)
+        self.radius_value.pack(anchor="e", padx=20)
+        tk.Scale(p, from_=0, to=40, orient="horizontal", variable=self.radius_var,
+                 command=self.change_radius, bg=self.PANEL, fg=self.TEXT, troughcolor="#26343d",
+                 activebackground=self.GREEN, highlightthickness=0, showvalue=False).pack(fill="x", padx=20)
+
+        tk.Label(p, text="Opacity", bg=self.PANEL, fg=self.MUTED).pack(anchor="w", padx=20, pady=(7, 0))
+        self.opacity_var = tk.IntVar(value=self.settings.opacity)
+        self.opacity_value = tk.Label(p, text=f"{self.settings.opacity}%", bg=self.PANEL, fg=self.GREEN)
+        self.opacity_value.pack(anchor="e", padx=20)
+        tk.Scale(p, from_=65, to=100, orient="horizontal", variable=self.opacity_var,
+                 command=self.change_opacity, bg=self.PANEL, fg=self.TEXT, troughcolor="#26343d",
+                 activebackground=self.GREEN, highlightthickness=0, showvalue=False).pack(fill="x", padx=20)
+
+        self._button(p, "MOBIELE PUSH INSTELLEN", self.configure_ntfy).pack(fill="x", padx=20, pady=(12, 5))
+        self._button(p, "TEST PUSH", self.test_push, bg="#35511f", fg=self.GREEN).pack(fill="x", padx=20, pady=(0, 24))
 
     def start_drag(self, event) -> None:
+        if self.settings.locked:
+            return
         self._drag_x = event.x_root - self.root.winfo_x()
         self._drag_y = event.y_root - self.root.winfo_y()
 
     def do_drag(self, event) -> None:
+        if self.settings.locked:
+            return
         self.root.geometry(f"+{event.x_root - self._drag_x}+{event.y_root - self._drag_y}")
+
+    def end_drag(self, _event) -> None:
+        if not self.settings.locked:
+            self.save_current_position(show_message=False)
+
+    def save_current_position(self, show_message: bool = True) -> None:
+        self.settings.window_x = self.root.winfo_x()
+        self.settings.window_y = self.root.winfo_y()
+        self.settings.save()
+        self.position_label.configure(text=f"Opgeslagen: x {self.settings.window_x}, y {self.settings.window_y}")
+        if show_message:
+            messagebox.showinfo(APP_NAME, "De huidige schermpositie is opgeslagen.")
 
     def toggle_settings(self) -> None:
         x, y = self.root.winfo_x(), self.root.winfo_y()
@@ -311,6 +387,53 @@ class RebirthApp:
         else:
             self.settings_panel.pack_forget()
             self.root.geometry(f"{self.WIDTH}x{self.HEIGHT}+{x}+{y}")
+        self.root.after(50, self.apply_corner_radius)
+
+    def apply_corner_radius(self) -> None:
+        if not hasattr(ctypes, "windll"):
+            return
+        try:
+            self.root.update_idletasks()
+            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
+            width = self.root.winfo_width()
+            height = self.root.winfo_height()
+            radius = max(0, int(self.settings.corner_radius)) * 2
+            region = ctypes.windll.gdi32.CreateRoundRectRgn(0, 0, width + 1, height + 1, radius, radius)
+            ctypes.windll.user32.SetWindowRgn(hwnd, region, True)
+        except Exception:
+            logging.exception("Hoekafronding toepassen mislukt")
+
+    def change_radius(self, value: str) -> None:
+        self.settings.corner_radius = int(float(value))
+        self.radius_value.configure(text=f"{self.settings.corner_radius} px")
+        self.settings.save()
+        self.apply_corner_radius()
+
+    def change_opacity(self, value: str) -> None:
+        self.settings.opacity = int(float(value))
+        self.opacity_value.configure(text=f"{self.settings.opacity}%")
+        self.root.attributes("-alpha", self.settings.opacity / 100)
+        self.settings.save()
+
+    def save_options(self) -> None:
+        self.settings.locked = self.lock_var.get()
+        self.settings.launch_with_gfn = self.gfn_var.get()
+        self.settings.always_on_top = self.top_var.get()
+        self.settings.notify_rebirth = self.notify_var.get()
+        self.root.attributes("-topmost", self.settings.always_on_top)
+        self.settings.save()
+        self.render()
+
+    def install_watcher(self) -> None:
+        installer = BASE_DIR / "Install GeForce NOW Auto Start.bat"
+        if not installer.exists():
+            messagebox.showerror(APP_NAME, "Installerbestand ontbreekt. Voer eerst git pull uit.")
+            return
+        self.settings.launch_with_gfn = True
+        self.gfn_var.set(True)
+        self.settings.save()
+        subprocess.Popen(["cmd", "/c", str(installer)], cwd=BASE_DIR)
+        messagebox.showinfo(APP_NAME, "De watcher-installer is gestart. Volg het zwarte venster één keer.")
 
     def selected_map_index(self) -> int | None:
         selected = self.maps_list.curselection()
@@ -387,11 +510,8 @@ class RebirthApp:
             messagebox.showinfo(APP_NAME, "Selecteer eerst een map in de lijst.")
             return
         map_name = self.settings.maps[index]
-        path = filedialog.askopenfilename(
-            parent=self.root,
-            title=f"Kies afbeelding voor {map_name}",
-            filetypes=[("Afbeeldingen", "*.png *.jpg *.jpeg *.webp *.bmp"), ("Alle bestanden", "*.*")],
-        )
+        path = filedialog.askopenfilename(parent=self.root, title=f"Kies afbeelding voor {map_name}",
+                                          filetypes=[("Afbeeldingen", "*.png *.jpg *.jpeg *.webp *.bmp"), ("Alle bestanden", "*.*")])
         if path:
             self.settings.image_paths[map_name] = path
             self.settings.save()
@@ -399,26 +519,17 @@ class RebirthApp:
             self.refresh_maps_list(index)
             self.update_image_status()
             self.render()
-            messagebox.showinfo(APP_NAME, f"Afbeelding voor {map_name} is opgeslagen.")
 
     def update_image_status(self) -> None:
         index = self.selected_map_index()
         if index is None:
-            self.image_status.configure(text="Selecteer een map om de gekoppelde afbeelding te zien.", fg=self.MUTED)
+            self.image_status.configure(text="Selecteer een map om de afbeelding te zien.", fg=self.MUTED)
             return
         name = self.settings.maps[index]
         path = self.settings.image_paths.get(name, "")
         exists = bool(path and Path(path).exists())
-        self.image_status.configure(
-            text=f"{name}:\n{path if path else 'Nog geen afbeelding gekoppeld'}",
-            fg=self.GREEN if exists else self.AMBER,
-        )
-
-    def save_options(self) -> None:
-        self.settings.always_on_top = self.top_var.get()
-        self.settings.notify_rebirth = self.notify_var.get()
-        self.root.attributes("-topmost", self.settings.always_on_top)
-        self.settings.save()
+        self.image_status.configure(text=f"{name}:\n{path if path else 'Nog geen afbeelding gekoppeld'}",
+                                    fg=self.GREEN if exists else self.AMBER)
 
     def configure_ntfy(self) -> None:
         topic = simpledialog.askstring(APP_NAME, "Geheim ntfy-topic:", initialvalue=self.settings.ntfy_topic, parent=self.root)
@@ -499,7 +610,6 @@ class RebirthApp:
         minutes, seconds = divmod(max(0, self.settings.remaining_seconds), 60)
         is_rebirth = current.lower() == REBIRTH_NAME.lower()
         accent = self.GREEN if is_rebirth else self.TEXT
-
         current_photo = self._load_photo(current, (self.WIDTH, self.HEIGHT), 0.74)
         next_photo = self._load_photo(next_map, (151, 48), 0.88)
         self.image_label.configure(image=current_photo)
@@ -509,8 +619,10 @@ class RebirthApp:
         self.time_label.configure(text=f"{minutes} MIN {seconds:02d} SEC")
         self.map_text.configure(text=current.upper(), fg=accent)
         self.status_dot.configure(fg=self.GREEN if is_rebirth else self.AMBER)
+        lock_text = "LOCKED" if self.settings.locked else "CURRENTLY PLAYING"
+        self.playing_label.configure(text=lock_text if self.engine.running else f"PAUSED • {lock_text}")
         self.next_name.configure(text=next_map.upper())
-        self.playing_label.configure(text="CURRENTLY PLAYING" if self.engine.running else "PAUSED • DOUBLE CLICK TO START")
+        self.position_label.configure(text=f"Opgeslagen: x {self.settings.window_x}, y {self.settings.window_y}")
         self.refresh_maps_list()
         self.root.title(f"{current} • {minutes:02d}:{seconds:02d}")
 
@@ -534,6 +646,7 @@ class RebirthApp:
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
 
     def hide_to_tray(self) -> None:
+        self.save_current_position(show_message=False)
         if self.tray_icon:
             self.root.withdraw()
         else:
@@ -541,9 +654,12 @@ class RebirthApp:
 
     def show_window(self) -> None:
         self.root.deiconify()
+        self.root.geometry(f"+{self.settings.window_x}+{self.settings.window_y}")
         self.root.lift()
+        self.root.after(50, self.apply_corner_radius)
 
     def quit_app(self) -> None:
+        self.save_current_position(show_message=False)
         self.engine.pause()
         self.settings.save()
         if self.tray_icon:
