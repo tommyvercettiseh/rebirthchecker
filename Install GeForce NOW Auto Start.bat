@@ -9,9 +9,12 @@ if not exist ".venv\Scripts\pythonw.exe" (
 )
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$p = Join-Path $env:USERPROFILE '.rebirthchecker\config.json';" ^
-  "$d = @{}; if (Test-Path $p) { try { $d = Get-Content $p -Raw | ConvertFrom-Json -AsHashtable } catch {} };" ^
-  "$d['launch_with_gfn'] = $true;" ^
+  "$dir = Join-Path $env:USERPROFILE '.rebirthchecker';" ^
+  "$p = Join-Path $dir 'config.json';" ^
+  "New-Item -ItemType Directory -Force -Path $dir | Out-Null;" ^
+  "$d = $null; if (Test-Path $p) { try { $d = Get-Content $p -Raw | ConvertFrom-Json } catch {} };" ^
+  "if ($null -eq $d) { $d = New-Object PSObject };" ^
+  "if ($d.PSObject.Properties.Name -contains 'launch_with_gfn') { $d.launch_with_gfn = $true } else { $d | Add-Member -NotePropertyName launch_with_gfn -NotePropertyValue $true };" ^
   "$d | ConvertTo-Json -Depth 8 | Set-Content $p -Encoding UTF8"
 
 set "STARTUP=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
@@ -20,11 +23,15 @@ set "VBS=%STARTUP%\RebirthChecker GeForceNOW Watcher.vbs"
 > "%VBS%" echo Set shell = CreateObject("WScript.Shell")
 >> "%VBS%" echo shell.Run Chr(34) ^& "%CD%\.venv\Scripts\pythonw.exe" ^& Chr(34) ^& " " ^& Chr(34) ^& "%CD%\watcher.py" ^& Chr(34), 0, False
 
-taskkill /F /IM pythonw.exe /FI "WINDOWTITLE eq Rebirth Checker Watcher" >nul 2>nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*rebirthchecker*watcher.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>nul
+
 start "Rebirth Checker Watcher" ".venv\Scripts\pythonw.exe" "watcher.py"
 
 echo.
 echo GeForce NOW auto-start is geinstalleerd en direct ingeschakeld.
+echo De widget opent maximaal een keer per GeForce NOW-sessie.
 echo Logbestand: %USERPROFILE%\.rebirthchecker\watcher.log
-echo Test nu door GeForce NOW te starten.
+echo.
+echo Sluit GeForce NOW volledig af en start het daarna opnieuw om te testen.
 pause
