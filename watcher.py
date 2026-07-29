@@ -34,20 +34,26 @@ def config_allows_launch() -> bool:
         return True
 
 
-def process_rows() -> list[str]:
+def process_rows() -> str:
     result = subprocess.run(
-        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-         "Get-CimInstance Win32_Process | Select-Object Name,ExecutablePath,CommandLine | ConvertTo-Json -Compress"],
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            "Get-CimInstance Win32_Process | Select-Object Name,ExecutablePath,CommandLine | ConvertTo-Json -Compress",
+        ],
         capture_output=True,
         text=True,
         creationflags=CREATE_NO_WINDOW,
         check=False,
     )
-    return [result.stdout.lower()]
+    return result.stdout.lower()
 
 
 def geforce_now_running() -> bool:
-    current = "\n".join(process_rows())
+    current = process_rows()
     markers = (
         "geforcenow.exe",
         "geforce now",
@@ -77,23 +83,38 @@ def start_widget() -> None:
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     executable = pythonw if pythonw.exists() else Path(sys.executable)
     subprocess.Popen([str(executable), str(APP_PATH)], cwd=BASE_DIR, creationflags=CREATE_NO_WINDOW)
-    log("Rebirth Checker gestart omdat GeForce NOW is gedetecteerd.")
+    log("Rebirth Checker eenmaal gestart voor deze GeForce NOW-sessie.")
 
 
 def main() -> None:
     log("Watcher gestart.")
-    last_gfn_state = None
+    last_gfn_state: bool | None = None
+    launched_for_current_session = False
+
     while True:
         try:
             gfn_running = geforce_now_running()
+
             if gfn_running != last_gfn_state:
                 log(f"GeForce NOW actief: {gfn_running}")
                 last_gfn_state = gfn_running
-            if config_allows_launch() and gfn_running and not widget_running():
+
+            if not gfn_running:
+                launched_for_current_session = False
+                time.sleep(3)
+                continue
+
+            if (
+                config_allows_launch()
+                and not launched_for_current_session
+                and not widget_running()
+            ):
                 start_widget()
-                time.sleep(20)
+                launched_for_current_session = True
+                time.sleep(10)
             else:
                 time.sleep(3)
+
         except Exception as exc:
             log(f"Watcherfout: {exc}")
             time.sleep(10)
