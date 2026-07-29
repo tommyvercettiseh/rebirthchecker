@@ -10,6 +10,7 @@ BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = Path.home() / ".rebirthchecker" / "config.json"
 APP_PATH = BASE_DIR / "app.py"
 PROCESS_NAMES = ("GeForceNOW.exe", "GeForceNOWContainer.exe", "GeForceNOWStreamer.exe")
+CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def config_allows_launch() -> bool:
@@ -27,14 +28,10 @@ def process_list() -> str:
         ["tasklist", "/FO", "CSV", "/NH"],
         capture_output=True,
         text=True,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        creationflags=CREATE_NO_WINDOW,
         check=False,
     )
     return result.stdout.lower()
-
-
-def is_running(name: str) -> bool:
-    return name.lower() in process_list()
 
 
 def geForce_now_running() -> bool:
@@ -42,24 +39,34 @@ def geForce_now_running() -> bool:
     return any(name.lower() in current for name in PROCESS_NAMES)
 
 
+def widget_running() -> bool:
+    script = (
+        "$p = Get-CimInstance Win32_Process | "
+        "Where-Object { $_.CommandLine -like '*rebirthchecker*app.py*' }; "
+        "if ($p) { exit 0 } else { exit 1 }"
+    )
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        capture_output=True,
+        creationflags=CREATE_NO_WINDOW,
+        check=False,
+    )
+    return result.returncode == 0
+
+
 def start_widget() -> None:
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     executable = pythonw if pythonw.exists() else Path(sys.executable)
-    subprocess.Popen(
-        [str(executable), str(APP_PATH)],
-        cwd=BASE_DIR,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
+    subprocess.Popen([str(executable), str(APP_PATH)], cwd=BASE_DIR, creationflags=CREATE_NO_WINDOW)
 
 
 def main() -> None:
     while True:
         try:
-            if config_allows_launch() and geForce_now_running() and not is_running("RebirthChecker.exe"):
-                # Python-versie: voorkom dubbel starten via window title/process is niet betrouwbaar.
-                # De mutex wordt praktisch afgevangen door één watcher-start en een ruime cooldown.
+            should_start = config_allows_launch() and geForce_now_running() and not widget_running()
+            if should_start:
                 start_widget()
-                time.sleep(30)
+                time.sleep(20)
             else:
                 time.sleep(3)
         except Exception:
