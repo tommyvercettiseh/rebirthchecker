@@ -23,27 +23,26 @@ def log(message: str) -> None:
         handle.write(f"{stamp} {message}\n")
 
 
-def config_allows_launch() -> bool:
+def load_config() -> dict:
     try:
-        if not CONFIG_PATH.exists():
-            return True
-        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        return bool(data.get("launch_with_gfn", True))
+        if CONFIG_PATH.exists():
+            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except Exception as exc:
         log(f"Config lezen mislukt: {exc}")
-        return True
+    return {}
 
 
-def process_rows() -> str:
+def config_allows_launch() -> bool:
+    return bool(load_config().get("launch_with_gfn", True))
+
+
+def selected_process_name() -> str:
+    return str(load_config().get("gfn_process_name", "")).strip().lower()
+
+
+def tasklist_text() -> str:
     result = subprocess.run(
-        [
-            "powershell",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            "Get-CimInstance Win32_Process | Select-Object Name,ExecutablePath,CommandLine | ConvertTo-Json -Compress",
-        ],
+        ["tasklist", "/FO", "CSV", "/NH"],
         capture_output=True,
         text=True,
         creationflags=CREATE_NO_WINDOW,
@@ -53,15 +52,19 @@ def process_rows() -> str:
 
 
 def geforce_now_running() -> bool:
-    current = process_rows()
-    markers = (
+    current = tasklist_text()
+    selected = selected_process_name()
+    if selected:
+        return f'"{selected}"' in current or selected in current
+
+    fallback_markers = (
         "geforcenow.exe",
         "geforce now",
         "geforcenowcontainer",
         "geforcenowstreamer",
         "nvidia geforce now",
     )
-    return any(marker in current for marker in markers)
+    return any(marker in current for marker in fallback_markers)
 
 
 def widget_running() -> bool:
@@ -87,7 +90,7 @@ def start_widget() -> None:
 
 
 def main() -> None:
-    log("Watcher gestart.")
+    log(f"Watcher gestart. Gekozen proces: {selected_process_name() or 'automatische herkenning'}")
     last_gfn_state: bool | None = None
     launched_for_current_session = False
 
@@ -104,12 +107,11 @@ def main() -> None:
                 time.sleep(3)
                 continue
 
-            if (
-                config_allows_launch()
-                and not launched_for_current_session
-                and not widget_running()
-            ):
-                start_widget()
+            if config_allows_launch() and not launched_for_current_session:
+                if not widget_running():
+                    start_widget()
+                else:
+                    log("Widget draaide al bij start van deze GeForce NOW-sessie.")
                 launched_for_current_session = True
                 time.sleep(10)
             else:
