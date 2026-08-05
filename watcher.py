@@ -26,7 +26,7 @@ def log(message: str) -> None:
 def load_config() -> dict:
     try:
         if CONFIG_PATH.exists():
-            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            return json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
     except Exception as exc:
         log(f"Config lezen mislukt: {exc}")
     return {}
@@ -58,8 +58,6 @@ def powershell_output(script: str) -> str:
 
 
 def geforce_now_running() -> bool:
-    # Dit volgt dezelfde logica als Taakbeheer: alleen de zichtbare app telt,
-    # niet alle losse NVIDIA-helperprocessen op de achtergrond.
     script = r"""
 $gfn = Get-Process -ErrorAction SilentlyContinue | Where-Object {
     $_.MainWindowHandle -ne 0 -and (
@@ -72,8 +70,6 @@ if ($gfn) { '1' } else { '0' }
     if powershell_output(script).endswith("1"):
         return True
 
-    # Compatibiliteitsfallback voor systemen waarop MainWindowHandle tijdelijk
-    # leeg blijft tijdens het openen. Alleen expliciet opgeslagen GFN-processen.
     selected = selected_process_names()
     if not selected:
         return False
@@ -91,18 +87,17 @@ if ($p) {{ '1' }} else {{ '0' }}
 
 
 def widget_running() -> bool:
-    script = (
-        "$p = Get-CimInstance Win32_Process | "
-        "Where-Object { $_.CommandLine -like '*rebirthchecker*app.py*' }; "
-        "if ($p) { exit 0 } else { exit 1 }"
-    )
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
-        capture_output=True,
-        creationflags=CREATE_NO_WINDOW,
-        check=False,
-    )
-    return result.returncode == 0
+    app_path = str(APP_PATH).replace("'", "''")
+    script = f"""
+$app = '{app_path}'
+$p = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {{
+    ($_.Name -ieq 'python.exe' -or $_.Name -ieq 'pythonw.exe') -and
+    $_.CommandLine -and
+    $_.CommandLine.IndexOf($app, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+}} | Select-Object -First 1
+if ($p) {{ '1' }} else {{ '0' }}
+"""
+    return powershell_output(script).endswith("1")
 
 
 def start_widget() -> None:
