@@ -32,10 +32,6 @@ def load_config() -> dict:
     return {}
 
 
-def config_allows_launch() -> bool:
-    return bool(load_config().get("launch_with_gfn", True))
-
-
 def selected_process_names() -> list[str]:
     config = load_config()
     names = config.get("gfn_process_names")
@@ -103,8 +99,16 @@ if ($p) {{ '1' }} else {{ '0' }}
 def start_widget() -> None:
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     executable = pythonw if pythonw.exists() else Path(sys.executable)
-    subprocess.Popen([str(executable), str(APP_PATH)], cwd=BASE_DIR, creationflags=CREATE_NO_WINDOW)
-    log("Rebirth Checker eenmaal gestart voor deze GeForce NOW-sessie.")
+    try:
+        process = subprocess.Popen(
+            [str(executable), str(APP_PATH)],
+            cwd=BASE_DIR,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        log(f"Rebirth Checker gestart. PID: {process.pid}")
+    except Exception as exc:
+        log(f"Widget starten mislukt: {exc}")
+        raise
 
 
 def main() -> None:
@@ -126,7 +130,7 @@ def main() -> None:
                 time.sleep(3)
                 continue
 
-            if config_allows_launch() and not launched_for_current_session:
+            if not launched_for_current_session:
                 if not widget_running():
                     start_widget()
                 else:
