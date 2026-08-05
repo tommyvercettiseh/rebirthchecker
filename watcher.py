@@ -36,35 +36,58 @@ def config_allows_launch() -> bool:
     return bool(load_config().get("launch_with_gfn", True))
 
 
-def selected_process_name() -> str:
-    return str(load_config().get("gfn_process_name", "")).strip().lower()
+def selected_process_names() -> list[str]:
+    config = load_config()
+    names = config.get("gfn_process_names")
+    if isinstance(names, list):
+        return [str(name).strip().lower() for name in names if str(name).strip()]
+
+    legacy = str(config.get("gfn_process_name", "")).strip().lower()
+    return [legacy] if legacy else []
 
 
-def tasklist_text() -> str:
+def powershell_output(script: str) -> str:
     result = subprocess.run(
-        ["tasklist", "/FO", "CSV", "/NH"],
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
         capture_output=True,
         text=True,
         creationflags=CREATE_NO_WINDOW,
         check=False,
     )
-    return result.stdout.lower()
+    return result.stdout.strip()
 
 
 def geforce_now_running() -> bool:
-    current = tasklist_text()
-    selected = selected_process_name()
-    if selected:
-        return f'"{selected}"' in current or selected in current
-
-    fallback_markers = (
-        "geforcenow.exe",
-        "geforce now",
-        "geforcenowcontainer",
-        "geforcenowstreamer",
-        "nvidia geforce now",
+    # Dit volgt dezelfde logica als Taakbeheer: alleen de zichtbare app telt,
+    # niet alle losse NVIDIA-helperprocessen op de achtergrond.
+    script = r"""
+$gfn = Get-Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.MainWindowHandle -ne 0 -and (
+        $_.ProcessName -match 'GeForceNOW|GeForce Now' -or
+        $_.MainWindowTitle -match 'GeForce NOW'
     )
-    return any(marker in current for marker in fallback_markers)
+} | Select-Object -First 1
+if ($gfn) { '1' } else { '0' }
+"""
+    if powershell_output(script).endswith("1"):
+        return True
+
+    # Compatibiliteitsfallback voor systemen waarop MainWindowHandle tijdelijk
+    # leeg blijft tijdens het openen. Alleen expliciet opgeslagen GFN-processen.
+    selected = selected_process_names()
+    if not selected:
+        return False
+
+    escaped = ",".join("'" + name.replace("'", "''") + "'" for name in selected)
+    fallback_script = f"""
+$names = @({escaped})
+$p = Get-Process -ErrorAction SilentlyContinue | Where-Object {{
+    $names -contains ($_.ProcessName + '.exe').ToLower() -or
+    $names -contains $_.ProcessName.ToLower()
+}} | Select-Object -First 1
+if ($p) {{ '1' }} else {{ '0' }}
+"""
+    return powershell_output(fallback_script).endswith("1")
 
 
 def widget_running() -> bool:
@@ -90,7 +113,8 @@ def start_widget() -> None:
 
 
 def main() -> None:
-    log(f"Watcher gestart. Gekozen proces: {selected_process_name() or 'automatische herkenning'}")
+    selected = selected_process_names()
+    log(f"Watcher gestart. Detectie: zichtbaar GeForce NOW-venster; fallback: {selected or 'geen'}")
     last_gfn_state: bool | None = None
     launched_for_current_session = False
 
