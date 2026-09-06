@@ -43,6 +43,13 @@ jobs:
           p.write_text(s)
           PY
 
+      - name: Inspect Android source
+        run: |
+          echo '===== MAIN ACTIVITY ====='
+          sed -n '1,260p' rebirth_android/app/src/main/java/com/hes/rebirthchecker/MainActivity.java
+          echo '===== MANIFEST ====='
+          cat rebirth_android/app/src/main/AndroidManifest.xml
+
       - name: Add map images
         run: |
           mkdir -p rebirth_android/app/src/main/res/drawable rebirth_android/widget/src/main/res/drawable
