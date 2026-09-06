@@ -13,12 +13,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
@@ -28,14 +26,12 @@ jobs:
           git show 78a4fed39a51bc230f58f6c893537b7ce55d218e:android_project.tar.gz.b64 | base64 -d > android_project.tar.gz
           tar -xzf android_project.tar.gz
 
-      - name: Patch safe Live spelen toggle
+      - name: Patch stable live toggle
         run: |
           python - <<'PY'
           from pathlib import Path
-
           root = Path('rebirth_android/app/src/main')
-          java_dir = root / 'java/com/hes/rebirthchecker'
-          main = java_dir / 'MainActivity.java'
+          main = root / 'java/com/hes/rebirthchecker/MainActivity.java'
           s = main.read_text()
 
           s = s.replace(
@@ -45,134 +41,33 @@ jobs:
               '            c.clipPath(clip);'
           )
 
-          s = s.replace(
-              '        private int remaining;\n',
-              '        private int remaining;\n        private boolean liveAlerts;\n'
-          )
-          s = s.replace(
-              '            running = prefs.getBoolean("running", true);\n',
-              '            running = prefs.getBoolean("running", true);\n            liveAlerts = prefs.getBoolean("liveAlerts", false);\n'
-          )
+          s = s.replace('        private int remaining;\n', '        private int remaining;\n        private boolean liveAlerts;\n        private int lastNotifiedIndex = -1;\n')
+          s = s.replace('            running = prefs.getBoolean("running", true);\n', '            running = prefs.getBoolean("running", true);\n            liveAlerts = prefs.getBoolean("liveAlerts", false);\n')
+
+          old_loop = '''                    while (now >= endElapsed) {\n                        index = (index + 1) % MAPS.length;\n                        endElapsed += DURATION * 1000L;\n                    }'''
+          new_loop = '''                    while (now >= endElapsed) {\n                        index = (index + 1) % MAPS.length;\n                        endElapsed += DURATION * 1000L;\n                        if (liveAlerts && index == 1 && lastNotifiedIndex != index) {\n                            showRebirthNotification();\n                            lastNotifiedIndex = index;\n                        }\n                        if (index != 1) lastNotifiedIndex = -1;\n                    }'''
+          if old_loop not in s: raise SystemExit('loop target missing')
+          s = s.replace(old_loop, new_loop)
 
           old_draw = '''            p.setTextAlign(Paint.Align.CENTER);\n            text(c, "Tik links/rechts = vorige/volgende • midden = pauze", w/2f, top + cardH + 36f, 12f, 0xFF9AA6AD, false);\n            p.setTextAlign(Paint.Align.LEFT);'''
           new_draw = '''            p.setTextAlign(Paint.Align.CENTER);\n            text(c, "Tik links/rechts = vorige/volgende • midden = pauze", w/2f, top + cardH + 34f, 12f, 0xFF9AA6AD, false);\n            float liveY = top + cardH + 78f;\n            text(c, "LIVE SPELEN", w/2f - 58f, liveY + 5f, 12f, liveAlerts ? Color.rgb(139,232,63) : 0xFF9AA6AD, true);\n            float sx = w/2f + 22f;\n            RectF toggleRect = new RectF(sx, liveY - 15f, sx + 54f, liveY + 15f);\n            p.setColor(liveAlerts ? Color.rgb(70,130,36) : Color.rgb(48,58,64));\n            c.drawRoundRect(toggleRect, 18f, 18f, p);\n            p.setColor(liveAlerts ? Color.rgb(139,232,63) : Color.rgb(145,155,162));\n            c.drawCircle(liveAlerts ? sx + 39f : sx + 15f, liveY, 11f, p);\n            text(c, liveAlerts ? "Rebirth meldingen AAN" : "Geen meldingen", w/2f, liveY + 34f, 10f, liveAlerts ? Color.rgb(139,232,63) : 0xFF7E8A91, false);\n            p.setTextAlign(Paint.Align.LEFT);'''
-          if old_draw not in s:
-              raise SystemExit('draw target missing')
+          if old_draw not in s: raise SystemExit('draw target missing')
           s = s.replace(old_draw, new_draw)
 
           old_touch = '''        @Override public boolean onTouchEvent(MotionEvent e) {\n            if (e.getAction()!=MotionEvent.ACTION_UP) return true;\n            float x=e.getX()/getWidth();\n            if (x < .33f) skip(-1); else if (x > .67f) skip(1); else toggle();\n            return true;\n        }'''
           new_touch = '''        @Override public boolean onTouchEvent(MotionEvent e) {\n            if (e.getAction()!=MotionEvent.ACTION_UP) return true;\n            float cardW = getWidth() * 0.94f;\n            float cardH = cardW * 265f / 470f;\n            float top = Math.max(28f, (getHeight() - cardH) / 2f);\n            float liveY = top + cardH + 78f;\n            if (Math.abs(e.getY() - liveY) <= 34f) { toggleLiveAlerts(); return true; }\n            float x=e.getX()/getWidth();\n            if (x < .33f) skip(-1); else if (x > .67f) skip(1); else toggle();\n            return true;\n        }'''
-          if old_touch not in s:
-              raise SystemExit('touch target missing')
+          if old_touch not in s: raise SystemExit('touch target missing')
           s = s.replace(old_touch, new_touch)
 
           marker = '        private void skip(int d) {\n'
-          live_method = '''        private void toggleLiveAlerts() {\n            liveAlerts = !liveAlerts;\n            prefs.edit().putBoolean("liveAlerts", liveAlerts).apply();\n            if (liveAlerts) {\n                if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {\n                    requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 901);\n                }\n                RebirthNotifier.sync(getContext());\n                Toast.makeText(getContext(), "Live spelen aan • melding bij Rebirth", Toast.LENGTH_SHORT).show();\n            } else {\n                RebirthNotifier.cancel(getContext());\n                Toast.makeText(getContext(), "Live spelen uit • geen meldingen", Toast.LENGTH_SHORT).show();\n            }\n            invalidate();\n        }\n\n'''
-          if marker not in s:
-              raise SystemExit('skip marker missing')
-          s = s.replace(marker, live_method + marker)
-
-          old_skip = '''            save(); invalidate();\n        }\n        private void toggle() {'''
-          new_skip = '''            save();\n            if (liveAlerts) RebirthNotifier.sync(getContext());\n            invalidate();\n        }\n        private void toggle() {'''
-          s = s.replace(old_skip, new_skip)
-
-          old_toggle_tail = '''            save(); invalidate();\n        }\n\n        @Override protected void onDetachedFromWindow()'''
-          new_toggle_tail = '''            save();\n            if (liveAlerts) RebirthNotifier.sync(getContext());\n            invalidate();\n        }\n\n        @Override protected void onDetachedFromWindow()'''
-          s = s.replace(old_toggle_tail, new_toggle_tail)
+          methods = '''        private void toggleLiveAlerts() {\n            liveAlerts = !liveAlerts;\n            prefs.edit().putBoolean("liveAlerts", liveAlerts).apply();\n            if (liveAlerts && android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {\n                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 901);\n            }\n            if (liveAlerts && index == 1) showRebirthNotification();\n            Toast.makeText(getContext(), liveAlerts ? "Live spelen aan • Rebirth meldingen aan" : "Live spelen uit • geen meldingen", Toast.LENGTH_SHORT).show();\n            invalidate();\n        }\n\n        private void showRebirthNotification() {\n            if (!liveAlerts) return;\n            if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) return;\n            android.app.NotificationManager nm = (android.app.NotificationManager)getContext().getSystemService(android.content.Context.NOTIFICATION_SERVICE);\n            if (nm == null) return;\n            String channelId = "rebirth_live";\n            if (android.os.Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(new android.app.NotificationChannel(channelId, "Rebirth live meldingen", android.app.NotificationManager.IMPORTANCE_HIGH));\n            android.app.Notification.Builder b = android.os.Build.VERSION.SDK_INT >= 26 ? new android.app.Notification.Builder(getContext(), channelId) : new android.app.Notification.Builder(getContext());\n            b.setSmallIcon(android.R.drawable.star_big_on)\n             .setContentTitle("Rebirth Island is live!")\n             .setContentText("Rebirth Island is nu actief. Tijd om te joinen.")\n             .setAutoCancel(true)\n             .setPriority(android.app.Notification.PRIORITY_HIGH)\n             .setDefaults(android.app.Notification.DEFAULT_ALL);\n            nm.notify(77, b.build());\n        }\n\n'''
+          if marker not in s: raise SystemExit('method marker missing')
+          s = s.replace(marker, methods + marker)
           main.write_text(s)
-
-          notifier = r'''package com.hes.rebirthchecker;
-
-import android.app.AlarmManager;
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.PendingIntent;
-import android.content.Context;
-import android.content.Intent;
-import android.content.SharedPreferences;
-import android.os.Build;
-
-public final class RebirthNotifier {
-    static final String CHANNEL_ID = "rebirth_live";
-    static final int NOTIFICATION_ID = 77;
-    static final int ALARM_REQUEST = 7788;
-    static final int DURATION = 600;
-    private RebirthNotifier() {}
-
-    static SharedPreferences prefs(Context c) { return c.getSharedPreferences("rotation", Context.MODE_PRIVATE); }
-    static PendingIntent alarmIntent(Context c) {
-        return PendingIntent.getBroadcast(c, ALARM_REQUEST, new Intent(c, RebirthNotificationReceiver.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-    }
-    public static void cancel(Context c) {
-        AlarmManager am = (AlarmManager)c.getSystemService(Context.ALARM_SERVICE);
-        if (am != null) am.cancel(alarmIntent(c));
-    }
-    public static void sync(Context c) {
-        SharedPreferences p = prefs(c);
-        if (!p.getBoolean("liveAlerts", false) || !p.getBoolean("running", true)) { cancel(c); return; }
-        int index = Math.floorMod(p.getInt("index", 0), 3);
-        int remaining = Math.max(1, p.getInt("remaining", DURATION));
-        if (index == 1) {
-            notifyNow(c);
-            schedule(c, System.currentTimeMillis() + 3L * DURATION * 1000L);
-            return;
-        }
-        int steps = Math.floorMod(1 - index, 3);
-        long delay = remaining + Math.max(0, steps - 1) * (long)DURATION;
-        schedule(c, System.currentTimeMillis() + Math.max(1L, delay) * 1000L);
-    }
-    static void scheduleNextCycle(Context c) {
-        if (!prefs(c).getBoolean("liveAlerts", false)) return;
-        schedule(c, System.currentTimeMillis() + 3L * DURATION * 1000L);
-    }
-    static void schedule(Context c, long when) {
-        AlarmManager am = (AlarmManager)c.getSystemService(Context.ALARM_SERVICE);
-        if (am == null) return;
-        if (Build.VERSION.SDK_INT >= 23) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, alarmIntent(c));
-        else am.set(AlarmManager.RTC_WAKEUP, when, alarmIntent(c));
-    }
-    static void notifyNow(Context c) {
-        if (!prefs(c).getBoolean("liveAlerts", false)) return;
-        if (Build.VERSION.SDK_INT >= 33 && c.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) return;
-        NotificationManager nm = (NotificationManager)c.getSystemService(Context.NOTIFICATION_SERVICE);
-        if (nm == null) return;
-        if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel ch = new NotificationChannel(CHANNEL_ID, "Rebirth live meldingen", NotificationManager.IMPORTANCE_HIGH);
-            nm.createNotificationChannel(ch);
-        }
-        PendingIntent content = PendingIntent.getActivity(c, 0, new Intent(c, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(c, CHANNEL_ID) : new Notification.Builder(c);
-        b.setSmallIcon(android.R.drawable.star_big_on)
-         .setContentTitle("Rebirth Island is live!")
-         .setContentText("Rebirth Island is nu actief. Tijd om te joinen.")
-         .setAutoCancel(true)
-         .setContentIntent(content)
-         .setPriority(Notification.PRIORITY_HIGH)
-         .setDefaults(Notification.DEFAULT_ALL);
-        nm.notify(NOTIFICATION_ID, b.build());
-    }
-}
-'''
-          (java_dir / 'RebirthNotifier.java').write_text(notifier)
-
-          receiver = r'''package com.hes.rebirthchecker;
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-public class RebirthNotificationReceiver extends BroadcastReceiver {
-    @Override public void onReceive(Context context, Intent intent) {
-        RebirthNotifier.notifyNow(context);
-        RebirthNotifier.scheduleNextCycle(context);
-    }
-}
-'''
-          (java_dir / 'RebirthNotificationReceiver.java').write_text(receiver)
 
           manifest = root / 'AndroidManifest.xml'
           m = manifest.read_text()
           m = m.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>')
-          m = m.replace('    </application>', '        <receiver android:name=".RebirthNotificationReceiver" android:exported="false"/>\n    </application>')
           manifest.write_text(m)
           PY
 
@@ -193,15 +88,10 @@ public class RebirthNotificationReceiver extends BroadcastReceiver {
 
       - name: Rename APKs
         run: |
-          cp rebirth_android/app/build/outputs/apk/debug/app-debug.apk Rebirth-Checker-Android-Safe.apk
+          cp rebirth_android/app/build/outputs/apk/debug/app-debug.apk Rebirth-Checker-Android-Stable.apk
           cp rebirth_android/widget/build/outputs/apk/debug/widget-debug.apk Rebirth-Rotation-Widget.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Rebirth-Checker-Android-Safe
-          path: Rebirth-Checker-Android-Safe.apk
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Rebirth-Rotation-Widget
-          path: Rebirth-Rotation-Widget.apk
+          name: Rebirth-Checker-Android-Stable
+          path: Rebirth-Checker-Android-Stable.apk
