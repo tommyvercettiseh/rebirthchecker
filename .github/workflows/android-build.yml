@@ -1,0 +1,62 @@
+name: Android APK Build
+
+on:
+  push:
+    paths:
+      - 'android_project.tar.gz.b64'
+      - '.github/workflows/android-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Restore Android project
+        run: |
+          base64 -d android_project.tar.gz.b64 > android_project.tar.gz
+          tar -xzf android_project.tar.gz
+
+      - name: Add map images
+        run: |
+          mkdir -p rebirth_android/app/src/main/res/drawable rebirth_android/widget/src/main/res/drawable
+          curl -L --fail 'https://www.callofduty.com/content/dam/atvi/callofduty/cod-touchui/guides/games/warzone/fortunes-keep/WZ-BO7-S04-FK-MAIN.webp' -o /tmp/fortunes_keep.webp
+          curl -L --fail 'https://www.callofduty.com/content/dam/atvi/callofduty/cod-touchui/guides/tac-atlas/wz-rebirth-island/WZRI_Full_BG-final.webp' -o /tmp/rebirth_island.webp
+          curl -L --fail 'https://pbs.twimg.com/media/G8jcDuybEAAn9w0.jpg' -o /tmp/havens_hollow.jpg
+          for module in app widget; do
+            cp /tmp/fortunes_keep.webp rebirth_android/$module/src/main/res/drawable/fortunes_keep.webp
+            cp /tmp/rebirth_island.webp rebirth_android/$module/src/main/res/drawable/rebirth_island.webp
+            cp /tmp/havens_hollow.jpg rebirth_android/$module/src/main/res/drawable/havens_hollow.jpg
+          done
+
+      - name: Build APKs
+        run: gradle -p rebirth_android :app:assembleDebug :widget:assembleDebug --stacktrace
+
+      - name: Rename APKs
+        run: |
+          cp rebirth_android/app/build/outputs/apk/debug/app-debug.apk Rebirth-Checker-Android.apk
+          cp rebirth_android/widget/build/outputs/apk/debug/widget-debug.apk Rebirth-Rotation-Widget.apk
+
+      - name: Upload app APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rebirth-Checker-Android
+          path: Rebirth-Checker-Android.apk
+
+      - name: Upload widget APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rebirth-Rotation-Widget
+          path: Rebirth-Rotation-Widget.apk
