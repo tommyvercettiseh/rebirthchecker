@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -26,8 +28,20 @@ jobs:
 
       - name: Restore Android project
         run: |
-          base64 -d android_project.tar.gz.b64 > android_project.tar.gz
+          git show 78a4fed39a51bc230f58f6c893537b7ce55d218e:android_project.tar.gz.b64 | base64 -d > android_project.tar.gz
           tar -xzf android_project.tar.gz
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('rebirth_android/app/src/main/java/com/hes/rebirthchecker/MainActivity.java')
+          s = p.read_text()
+          s = s.replace(
+              '            c.clipRoundRect(card, 24f, 24f);',
+              '            android.graphics.Path clip = new android.graphics.Path();\n'
+              '            clip.addRoundRect(card, 24f, 24f, android.graphics.Path.Direction.CW);\n'
+              '            c.clipPath(clip);'
+          )
+          p.write_text(s)
+          PY
 
       - name: Add map images
         run: |
