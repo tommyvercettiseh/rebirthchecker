@@ -32,12 +32,12 @@ jobs:
       - name: Add map images
         run: |
           mkdir -p rebirth_android/app/src/main/res/drawable rebirth_android/widget/src/main/res/drawable
-          curl -L --fail 'https://www.callofduty.com/content/dam/atvi/callofduty/cod-touchui/guides/games/warzone/fortunes-keep/WZ-BO7-S04-FK-MAIN.webp' -o /tmp/fortunes_keep.webp
-          curl -L --fail 'https://www.callofduty.com/content/dam/atvi/callofduty/cod-touchui/guides/tac-atlas/wz-rebirth-island/WZRI_Full_BG-final.webp' -o /tmp/rebirth_island.webp
-          curl -L --fail 'https://pbs.twimg.com/media/G8jcDuybEAAn9w0.jpg' -o /tmp/havens_hollow.jpg
+          curl -L --fail --connect-timeout 10 --max-time 45 'https://www.gamereactor.eu/media/95/activisionhasshared_3809583b.jpg' -o /tmp/fortunes_keep.jpg
+          curl -L --fail --connect-timeout 10 --max-time 45 'https://areajugones.sport.es/wp-content/uploads/2024/03/rebirth-island-warzone.jpg' -o /tmp/rebirth_island.jpg
+          curl -L --fail --connect-timeout 10 --max-time 45 'https://pbs.twimg.com/media/G8jcDuybEAAn9w0.jpg' -o /tmp/havens_hollow.jpg
           for module in app widget; do
-            cp /tmp/fortunes_keep.webp rebirth_android/$module/src/main/res/drawable/fortunes_keep.webp
-            cp /tmp/rebirth_island.webp rebirth_android/$module/src/main/res/drawable/rebirth_island.webp
+            cp /tmp/fortunes_keep.jpg rebirth_android/$module/src/main/res/drawable/fortunes_keep.jpg
+            cp /tmp/rebirth_island.jpg rebirth_android/$module/src/main/res/drawable/rebirth_island.jpg
             cp /tmp/havens_hollow.jpg rebirth_android/$module/src/main/res/drawable/havens_hollow.jpg
           done
 
