@@ -18,7 +18,14 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        try {
+            buildUi()
+        } catch (t: Throwable) {
+            showRecoveryScreen(t)
+        }
+    }
 
+    private fun buildUi() {
         val density = resources.displayMetrics.density
         val pad = (20 * density).toInt()
         val root = LinearLayout(this).apply {
@@ -154,6 +161,37 @@ class MainActivity : Activity() {
                 ).show()
             }
         }, LinearLayout.LayoutParams(-1, -2))
+    }
+
+    private fun showRecoveryScreen(t: Throwable) {
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, pad)
+        }
+        root.addView(TextView(this).apply {
+            text = "REBIRTH CHECKER"
+            textSize = 26f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        })
+        root.addView(TextView(this).apply {
+            text = "De app kon de normale interface niet laden, maar is niet afgesloten."
+            textSize = 16f
+            setPadding(0, pad, 0, pad / 2)
+        })
+        root.addView(TextView(this).apply {
+            text = "Fout: " + (t.javaClass.simpleName ?: "Onbekend") + "\n" + (t.message ?: "Geen details")
+            textSize = 13f
+            setTextIsSelectable(true)
+        })
+        root.addView(Button(this).apply {
+            text = "RESET INSTELLINGEN"
+            setOnClickListener {
+                getSharedPreferences("rotation", MODE_PRIVATE).edit().clear().apply()
+                recreate()
+            }
+        })
+        setContentView(root)
     }
 
     private fun saveMapNames() {
