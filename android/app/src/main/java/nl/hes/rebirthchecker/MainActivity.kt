@@ -1,12 +1,8 @@
 package nl.hes.rebirthchecker
 
 import android.app.Activity
-import android.app.AlarmManager
 import android.content.Intent
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.view.Gravity
 import android.widget.*
 
@@ -153,7 +149,6 @@ class MainActivity : Activity() {
                     remaining
                 )
                 RebirthWidgetProvider.updateAll(this@MainActivity)
-                requestExactAlarmIfNeeded()
                 Toast.makeText(
                     this@MainActivity,
                     "Klaar. De widget blijft nu automatisch doorlopen.",
@@ -228,17 +223,4 @@ class MainActivity : Activity() {
         RebirthWidgetProvider.updateAll(this)
     }
 
-    private fun requestExactAlarmIfNeeded() {
-        if (Build.VERSION.SDK_INT >= 31) {
-            val am = getSystemService(AlarmManager::class.java)
-            if (!am.canScheduleExactAlarms()) {
-                startActivity(
-                    Intent(
-                        Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                        Uri.parse("package:" + packageName)
-                    )
-                )
-            }
-        }
-    }
 }
