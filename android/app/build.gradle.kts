@@ -5,6 +5,15 @@ plugins {
 android {
     namespace = "nl.hes.rebirthchecker"
     compileSdk = 35
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
     defaultConfig {
         applicationId = "nl.hes.rebirthchecker"
         minSdk = 26
