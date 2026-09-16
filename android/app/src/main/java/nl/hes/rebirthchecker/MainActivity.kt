@@ -62,7 +62,7 @@ class MainActivity : Activity() {
             val name = EditText(this).apply {
                 setText(savedMaps[i])
                 hint = "Mapnaam"
-                singleLine = true
+                setSingleLine(true)
             }
             fields += name
             card.addView(name, LinearLayout.LayoutParams(-1, -2))
