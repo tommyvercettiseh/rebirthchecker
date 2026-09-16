@@ -35,12 +35,17 @@ class RebirthWidgetProvider : AppWidgetProvider() {
         const val ACTION_ROTATION_TICK = "nl.hes.rebirthchecker.ROTATION_TICK"
 
         fun updateAll(context: Context) {
-            val manager = AppWidgetManager.getInstance(context)
-            val ids = manager.getAppWidgetIds(
-                ComponentName(context, RebirthWidgetProvider::class.java)
-            )
-            ids.forEach { updateWidget(context, manager, it) }
-            scheduleNext(context)
+            try {
+                val manager = AppWidgetManager.getInstance(context)
+                val ids = manager.getAppWidgetIds(
+                    ComponentName(context, RebirthWidgetProvider::class.java)
+                )
+                ids.forEach {
+                    try { updateWidget(context, manager, it) } catch (_: Throwable) {}
+                }
+                scheduleNext(context)
+            } catch (_: Throwable) {
+            }
         }
 
         private fun updateWidget(context: Context, manager: AppWidgetManager, id: Int) {
@@ -155,13 +160,8 @@ class RebirthWidgetProvider : AppWidgetProvider() {
             )
 
             try {
-                if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
-                    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pi)
-                } else {
-                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pi)
-                }
-            } catch (_: SecurityException) {
                 am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pi)
+            } catch (_: Throwable) {
             }
         }
     }
