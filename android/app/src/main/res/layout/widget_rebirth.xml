@@ -4,9 +4,21 @@
     android:layout_height="match_parent" android:orientation="vertical"
     android:gravity="center_vertical" android:padding="14dp"
     android:background="@drawable/widget_background">
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <ImageView
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:src="@drawable/ic_launcher_foreground"
+            android:contentDescription="WZ" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
         android:text="NOW PLAYING" android:textColor="#9AA8B1"
         android:textStyle="bold" android:textSize="11sp" />
+    </LinearLayout>
     <TextView android:id="@+id/widget_map" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:layout_marginTop="2dp"
         android:text="REBIRTH ISLAND" android:textColor="#A7F432"
