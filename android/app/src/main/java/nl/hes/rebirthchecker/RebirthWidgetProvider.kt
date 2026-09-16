@@ -51,6 +51,7 @@ class RebirthWidgetProvider : AppWidgetProvider() {
         private fun updateWidget(context: Context, manager: AppWidgetManager, id: Int) {
             val views = RemoteViews(context.packageName, R.layout.widget_rebirth)
 
+            try {
             if (!RotationState.isCalibrated(context)) {
                 views.setTextViewText(R.id.widget_map, "TAP TO SET")
                 views.setTextViewText(R.id.widget_next, "MAP 2")
@@ -94,6 +95,19 @@ class RebirthWidgetProvider : AppWidgetProvider() {
             )
             views.setOnClickPendingIntent(R.id.widget_root, open)
             manager.updateAppWidget(id, views)
+            } catch (_: Throwable) {
+                val fallback = RemoteViews(context.packageName, R.layout.widget_rebirth_safe)
+                fallback.setTextViewText(R.id.safe_title, "REBIRTH CHECKER")
+                fallback.setTextViewText(R.id.safe_status, "Tik om instellingen te openen")
+                val open = PendingIntent.getActivity(
+                    context,
+                    1,
+                    Intent(context, MainActivity::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                fallback.setOnClickPendingIntent(R.id.safe_root, open)
+                manager.updateAppWidget(id, fallback)
+            }
         }
 
         private fun setFallbackImages(views: RemoteViews) {
