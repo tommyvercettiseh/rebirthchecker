@@ -58,7 +58,8 @@ class RebirthWidgetProvider : AppWidgetProvider() {
                 setFallbackImages(views)
             } else {
                 val s = RotationState.snapshot(context)
-                val base = SystemClock.elapsedRealtime() + s.remainingSeconds * 1000L
+                val safeRemaining = s.remainingSeconds.coerceIn(1L, RotationState.durationSeconds)
+                val base = SystemClock.elapsedRealtime() + safeRemaining * 1000L
 
                 views.setTextViewText(R.id.widget_map, s.currentMap.uppercase())
                 views.setTextColor(
@@ -149,7 +150,8 @@ class RebirthWidgetProvider : AppWidgetProvider() {
             if (!RotationState.isCalibrated(context)) return
 
             val s = RotationState.snapshot(context)
-            val trigger = System.currentTimeMillis() + s.remainingSeconds * 1000L + 250L
+            val remainingMs = s.remainingSeconds.coerceIn(1L, RotationState.durationSeconds) * 1000L
+            val trigger = System.currentTimeMillis() + remainingMs
             val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val pi = PendingIntent.getBroadcast(
                 context,
@@ -160,8 +162,16 @@ class RebirthWidgetProvider : AppWidgetProvider() {
             )
 
             try {
-                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pi)
+                if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) {
+                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pi)
+                } else {
+                    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pi)
+                }
             } catch (_: Throwable) {
+                try {
+                    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pi)
+                } catch (_: Throwable) {
+                }
             }
         }
     }
