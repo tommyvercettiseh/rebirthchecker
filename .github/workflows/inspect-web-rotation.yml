@@ -14,31 +14,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract rotation context
+      - name: Extract script context
         shell: python
         run: |
           from pathlib import Path
-          p = Path("web/index.html")
-          text = p.read_text(encoding="utf-8")
-          terms = ["Fortune's Keep", "Rebirth Island", "Haven's Hollow"]
+          import re
+          text = Path("web/index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script[^>]*>(.*?)</script>", text, flags=re.S|re.I)
           out = []
-          for term in terms:
-              start = 0
-              while True:
-                  i = text.find(term, start)
-                  if i < 0:
-                      break
-                  out.append(f"=== {term} @ {i} ===\n")
-                  out.append(text[max(0, i-1200):i+1800])
-                  out.append("\n\n")
-                  start = i + len(term)
-          Path("web_rotation_context.txt").write_text("".join(out), encoding="utf-8")
+          out.append(f"html_len={len(text)} scripts={len(scripts)}\n")
+          for idx, script in enumerate(scripts):
+              cleaned = re.sub(r"data:[^\"']+;base64,[A-Za-z0-9+/=]+", "[DATA_URI_REMOVED]", script)
+              cleaned = re.sub(r"[A-Za-z0-9+/=]{500,}", "[LONG_BLOB_REMOVED]", cleaned)
+              out.append(f"\n=== SCRIPT {idx} len={len(script)} ===\n")
+              out.append(cleaned[:120000])
+          Path("web_script_context.txt").write_text("".join(out), encoding="utf-8")
 
       - name: Commit context
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add web_rotation_context.txt
-          git commit -m "chore: inspect web rotation context" || exit 0
+          git add web_script_context.txt
+          git commit -m "chore: inspect web script context" || exit 0
           git push
