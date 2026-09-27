@@ -1,0 +1,44 @@
+name: Inspect Rebirth web rotation
+
+on:
+  push:
+    paths:
+      - ".github/workflows/inspect-web-rotation.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract rotation context
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path("web/index.html")
+          text = p.read_text(encoding="utf-8")
+          terms = ["Fortune's Keep", "Rebirth Island", "Haven's Hollow"]
+          out = []
+          for term in terms:
+              start = 0
+              while True:
+                  i = text.find(term, start)
+                  if i < 0:
+                      break
+                  out.append(f"=== {term} @ {i} ===\n")
+                  out.append(text[max(0, i-1200):i+1800])
+                  out.append("\n\n")
+                  start = i + len(term)
+          Path("web_rotation_context.txt").write_text("".join(out), encoding="utf-8")
+
+      - name: Commit context
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web_rotation_context.txt
+          git commit -m "chore: inspect web rotation context" || exit 0
+          git push
