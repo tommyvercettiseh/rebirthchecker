@@ -165,7 +165,7 @@ class RebirthWidgetProvider : AppWidgetProvider() {
 
             val s = RotationState.snapshot(context)
             val remainingMs = s.remainingSeconds.coerceIn(1L, RotationState.durationSeconds) * 1000L
-            val trigger = System.currentTimeMillis() + remainingMs
+            val trigger = System.currentTimeMillis() + remainingMs + 250L
             val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val pi = PendingIntent.getBroadcast(
                 context,
