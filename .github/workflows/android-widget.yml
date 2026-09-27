@@ -30,46 +30,17 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Smoke build
+      - name: Build test APK
         working-directory: android
         run: gradle :app:assembleDebug --stacktrace
 
-      - name: Check signing secrets
-        shell: bash
-        env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          test -n "$KEYSTORE_B64" || (echo "Missing ANDROID_KEYSTORE_BASE64" && exit 1)
-          test -n "$KEYSTORE_PASSWORD" || (echo "Missing ANDROID_KEYSTORE_PASSWORD" && exit 1)
-          test -n "$KEY_ALIAS" || (echo "Missing ANDROID_KEY_ALIAS" && exit 1)
-          test -n "$KEY_PASSWORD" || (echo "Missing ANDROID_KEY_PASSWORD" && exit 1)
-
-      - name: Restore release keystore
-        shell: bash
-        env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/rebirth-release.jks"
-
-      - name: Build signed release APK
-        working-directory: android
-        env:
-          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/rebirth-release.jks
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: gradle :app:assembleRelease --stacktrace
-
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk Rebirth-Checker-v0.5.0.apk
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk Rebirth-Checker-v0.5.0-test.apk
 
-      - name: Upload signed APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Rebirth-Checker-v0.5.0
-          path: Rebirth-Checker-v0.5.0.apk
+          name: Rebirth-Checker-v0.5.0-test
+          path: Rebirth-Checker-v0.5.0-test.apk
           if-no-files-found: error
           retention-days: 30
