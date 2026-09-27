@@ -204,9 +204,19 @@ const maps = [
 ];
 
 const duration = 10 * 60;
-const anchorIndex = 0;
 const initialRemaining = 7 * 60 + 42;
-const anchorEpoch = Date.now() - (duration - initialRemaining) * 1000;
+const defaultAnchorIndex = 0;
+const defaultAnchorEpoch = Date.now() - (duration - initialRemaining) * 1000;
+
+let anchorIndex = Number(localStorage.getItem("rebirth_anchor_index"));
+if (!Number.isInteger(anchorIndex) || anchorIndex < 0 || anchorIndex >= maps.length) {
+  anchorIndex = defaultAnchorIndex;
+}
+
+let anchorEpoch = Number(localStorage.getItem("rebirth_anchor_epoch"));
+if (!Number.isFinite(anchorEpoch) || anchorEpoch <= 0) {
+  anchorEpoch = defaultAnchorEpoch;
+}
 
 function snapshot() {
   const elapsed = Math.max(0, Math.floor((Date.now() - anchorEpoch) / 1000));
@@ -244,6 +254,169 @@ function render() {
 
 setInterval(render, 250);
 render();
+
+
+// Protected local sync controls
+const adminStyle = document.createElement('style');
+adminStyle.textContent = `
+  #rotationAdminBtn { position:fixed; right:14px; bottom:14px; z-index:9999; width:34px; height:34px; border:1px solid rgba(255,255,255,.10); border-radius:10px; background:rgba(8,12,18,.30); color:rgba(255,255,255,.28); font:16px/1 system-ui,sans-serif; cursor:pointer; backdrop-filter:blur(8px); opacity:.28; transition:opacity .18s ease,background .18s ease,color .18s ease; }
+  #rotationAdminBtn:hover { opacity:.95; color:#fff; background:rgba(8,12,18,.72); }
+  #rotationAdminOverlay { position:fixed; inset:0; z-index:10000; display:none; align-items:center; justify-content:center; background:rgba(2,5,9,.72); backdrop-filter:blur(12px); }
+  #rotationAdminPanel { width:min(390px,calc(100vw - 32px)); border:1px solid rgba(255,255,255,.10); border-radius:20px; background:rgba(12,17,24,.96); box-shadow:0 24px 80px rgba(0,0,0,.48); padding:22px; color:#fff; font-family:system-ui,-apple-system,Segoe UI,sans-serif; }
+  #rotationAdminPanel h3 { margin:0 0 5px; font-size:18px; }
+  #rotationAdminPanel .sub { margin:0 0 18px; color:rgba(255,255,255,.48); font-size:12px; }
+  #rotationAdminPanel label { display:block; margin:13px 0 6px; color:rgba(255,255,255,.62); font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
+  #rotationAdminPanel input,#rotationAdminPanel select { width:100%; box-sizing:border-box; border:1px solid rgba(255,255,255,.10); border-radius:12px; background:rgba(255,255,255,.055); color:#fff; padding:12px 13px; outline:none; font:14px system-ui,sans-serif; }
+  #rotationAdminPanel select option { color:#111; }
+  #rotationAdminPanel .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  #rotationAdminPanel .actions { display:flex; gap:9px; margin-top:18px; }
+  #rotationAdminPanel button { border:0; border-radius:12px; padding:11px 14px; cursor:pointer; font-weight:700; }
+  #rotationAdminSave { flex:1; background:#fff; color:#0a0d12; }
+  #rotationAdminClose,#rotationAdminCancel { background:rgba(255,255,255,.08); color:#fff; }
+  #rotationAdminError,#rotationAdminError2 { min-height:17px; margin-top:10px; color:#ff7a7a; font-size:12px; }
+`;
+document.head.appendChild(adminStyle);
+
+const adminBtn = document.createElement('button');
+adminBtn.id = 'rotationAdminBtn';
+adminBtn.type = 'button';
+adminBtn.title = 'Rotation sync';
+adminBtn.setAttribute('aria-label','Rotation sync');
+adminBtn.textContent = '⚙';
+document.body.appendChild(adminBtn);
+
+const adminOverlay = document.createElement('div');
+adminOverlay.id = 'rotationAdminOverlay';
+adminOverlay.innerHTML = `
+  <div id="rotationAdminPanel">
+    <div id="rotationAdminLocked">
+      <h3>Rotation sync</h3>
+      <p class="sub" id="rotationAdminLockText">Enter password to unlock.</p>
+      <label>Password</label>
+      <input id="rotationAdminPassword" type="password" autocomplete="current-password" />
+      <div id="rotationAdminConfirmWrap" style="display:none">
+        <label>Confirm password</label>
+        <input id="rotationAdminPasswordConfirm" type="password" autocomplete="new-password" />
+      </div>
+      <div id="rotationAdminError"></div>
+      <div class="actions">
+        <button id="rotationAdminUnlock">Unlock</button>
+        <button id="rotationAdminCancel">Close</button>
+      </div>
+    </div>
+    <div id="rotationAdminControls" style="display:none">
+      <h3>Sync rotation</h3>
+      <p class="sub">Set the map and exact remaining time shown in-game.</p>
+      <label>Current map</label>
+      <select id="rotationAdminMap">
+        <option value="0">Fortune's Keep</option>
+        <option value="1">Rebirth Island</option>
+        <option value="2">Haven's Hollow</option>
+      </select>
+      <div class="row">
+        <div><label>Minutes</label><input id="rotationAdminMinutes" type="number" min="0" max="10" inputmode="numeric" value="10" /></div>
+        <div><label>Seconds</label><input id="rotationAdminSeconds" type="number" min="0" max="59" inputmode="numeric" value="0" /></div>
+      </div>
+      <div id="rotationAdminError2"></div>
+      <div class="actions">
+        <button id="rotationAdminSave">Synchronize</button>
+        <button id="rotationAdminClose">Close</button>
+      </div>
+    </div>
+  </div>
+`;
+document.body.appendChild(adminOverlay);
+
+const adminPassword = document.getElementById('rotationAdminPassword');
+const adminPasswordConfirm = document.getElementById('rotationAdminPasswordConfirm');
+const adminConfirmWrap = document.getElementById('rotationAdminConfirmWrap');
+const adminLockText = document.getElementById('rotationAdminLockText');
+const adminLocked = document.getElementById('rotationAdminLocked');
+const adminControls = document.getElementById('rotationAdminControls');
+const adminError = document.getElementById('rotationAdminError');
+const adminMap = document.getElementById('rotationAdminMap');
+const adminMinutes = document.getElementById('rotationAdminMinutes');
+const adminSeconds = document.getElementById('rotationAdminSeconds');
+
+async function hashAdminPassword(value) {
+  const data = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256',data);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+function closeAdmin() {
+  adminOverlay.style.display = 'none';
+  adminPassword.value = '';
+  adminPasswordConfirm.value = '';
+  adminError.textContent = '';
+  document.getElementById('rotationAdminError2').textContent = '';
+  adminLocked.style.display = '';
+  adminControls.style.display = 'none';
+}
+
+function prepareAdminLock() {
+  const hasPassword = !!localStorage.getItem('rebirth_admin_hash');
+  adminConfirmWrap.style.display = hasPassword ? 'none' : '';
+  adminLockText.textContent = hasPassword ? 'Enter password to unlock.' : 'Create a password for this browser.';
+  adminPassword.autocomplete = hasPassword ? 'current-password' : 'new-password';
+}
+
+adminBtn.onclick = () => {
+  prepareAdminLock();
+  adminOverlay.style.display = 'flex';
+  setTimeout(() => adminPassword.focus(),50);
+};
+
+document.getElementById('rotationAdminCancel').onclick = closeAdmin;
+document.getElementById('rotationAdminClose').onclick = closeAdmin;
+adminOverlay.addEventListener('click',e => { if (e.target === adminOverlay) closeAdmin(); });
+
+document.getElementById('rotationAdminUnlock').onclick = async () => {
+  const password = adminPassword.value;
+  if (!password) { adminError.textContent = 'Enter a password.'; return; }
+
+  const savedHash = localStorage.getItem('rebirth_admin_hash');
+  const enteredHash = await hashAdminPassword(password);
+
+  if (!savedHash) {
+    if (password.length < 4) { adminError.textContent = 'Use at least 4 characters.'; return; }
+    if (password !== adminPasswordConfirm.value) { adminError.textContent = 'Passwords do not match.'; return; }
+    localStorage.setItem('rebirth_admin_hash',enteredHash);
+  } else if (enteredHash !== savedHash) {
+    adminError.textContent = 'Wrong password.';
+    return;
+  }
+
+  const s = snapshot();
+  adminMap.value = String(s.currentIndex);
+  adminMinutes.value = String(Math.floor(s.remaining / 60));
+  adminSeconds.value = String(s.remaining % 60);
+  adminError.textContent = '';
+  adminLocked.style.display = 'none';
+  adminControls.style.display = '';
+};
+
+document.getElementById('rotationAdminSave').onclick = () => {
+  const mapIndex = Number(adminMap.value);
+  const minutes = Number(adminMinutes.value);
+  const seconds = Number(adminSeconds.value);
+  const remaining = minutes * 60 + seconds;
+
+  if (!Number.isInteger(mapIndex) || mapIndex < 0 || mapIndex >= maps.length) return;
+  if (!Number.isFinite(remaining) || remaining < 1 || remaining > duration) {
+    document.getElementById('rotationAdminError2').textContent = 'Use a remaining time between 00:01 and 10:00.';
+    return;
+  }
+
+  anchorIndex = mapIndex;
+  anchorEpoch = Date.now() - (duration - remaining) * 1000;
+  localStorage.setItem('rebirth_anchor_index',String(anchorIndex));
+  localStorage.setItem('rebirth_anchor_epoch',String(anchorEpoch));
+  lastIndex = -1;
+  render();
+  closeAdmin();
+};
+
 
 fullscreenBtn.onclick = async () => {
   if (!document.fullscreenElement) {
