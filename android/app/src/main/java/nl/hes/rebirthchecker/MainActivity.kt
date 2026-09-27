@@ -1,8 +1,12 @@
 package nl.hes.rebirthchecker
 
 import android.app.Activity
+import android.app.AlarmManager
 import android.content.Intent
 import android.os.Bundle
+import android.os.Build
+import android.provider.Settings
+import android.net.Uri
 import android.view.Gravity
 import android.widget.*
 
@@ -137,6 +141,32 @@ class MainActivity : Activity() {
         root.addView(Button(this).apply {
             text = "KALIBREER & START"
             setOnClickListener {
+                if (Build.VERSION.SDK_INT >= 31) {
+                    val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
+                    if (!alarmManager.canScheduleExactAlarms()) {
+                        try {
+                            startActivity(
+                                Intent(
+                                    Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                    Uri.parse("package:$packageName")
+                                )
+                            )
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Sta 'Alarmen en herinneringen' toe en tik daarna opnieuw op Kalibreer & Start.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } catch (_: Throwable) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Geef Rebirth Checker toestemming voor exacte alarmen in Android-instellingen.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        return@setOnClickListener
+                    }
+                }
+
                 saveMapNames()
                 val remaining = (
                     (minutes.text.toString().toLongOrNull() ?: 0L) * 60L +
