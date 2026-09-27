@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0
+
+### Android release fix
+
+- De actuele `android/` module is de enige bron voor de APK-build.
+- Package-id blijft vast op `nl.hes.rebirthchecker`.
+- Android-versie verhoogd naar `versionCode 5` / `0.5.0`.
+- Workflow voert eerst een smoke-build uit en bouwt daarna een ondertekende release-APK.
+- Release signing komt uitsluitend uit GitHub Secrets zodat toekomstige APK's over dezelfde installatie heen kunnen worden bijgewerkt.
+- APK-artifact heet voortaan `Rebirth-Checker-v0.5.0.apk`.
+
+### Nog eenmalig nodig
+
+- GitHub Actions signing-secrets instellen voor de vaste Rebirth release key.
+- De huidige debug-geïnstalleerde versie kan één laatste uninstall nodig hebben. Vanaf de eerste vaste release-key kunnen volgende versies normaal als update worden geïnstalleerd.
+
 ## 0.1.0
 
 ### Toegevoegd
