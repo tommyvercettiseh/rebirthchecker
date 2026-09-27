@@ -1,0 +1,59 @@
+html_len=2781778 scripts=1
+
+=== SCRIPT 0 len=2777565 ===
+
+const maps = [
+  { name: "REBIRTH ISLAND", image: `[DATA_URI_REMOVED]` },
+  { name: "FORTUNE'S KEEP", image: `[DATA_URI_REMOVED]` },
+  { name: "HAVEN'S HOLLOW", image: `[DATA_URI_REMOVED]` }
+];
+
+const duration = 10 * 60;
+const anchorIndex = 0;
+const initialRemaining = 7 * 60 + 42;
+const anchorEpoch = Date.now() - (duration - initialRemaining) * 1000;
+
+function snapshot() {
+  const elapsed = Math.max(0, Math.floor((Date.now() - anchorEpoch) / 1000));
+  const completed = Math.floor(elapsed / duration);
+  const intoMap = elapsed % duration;
+  const currentIndex = (anchorIndex + completed) % maps.length;
+  return {
+    currentIndex,
+    currentMap: maps[currentIndex].name,
+    nextMap: maps[(currentIndex + 1) % maps.length].name,
+    laterMap: maps[(currentIndex + 2) % maps.length].name,
+    remaining: duration - intoMap,
+    image: maps[currentIndex].image
+  };
+}
+
+function fmt(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+}
+
+let lastIndex = -1;
+function render() {
+  const s = snapshot();
+  currentMap.textContent = s.currentMap;
+  nextMap.textContent = s.nextMap;
+  laterMap.textContent = s.laterMap;
+  countdown.textContent = fmt(s.remaining);
+  if (s.currentIndex !== lastIndex) {
+    lastIndex = s.currentIndex;
+    bg.style.backgroundImage = `url("${s.image}")`;
+  }
+}
+
+setInterval(render, 250);
+render();
+
+fullscreenBtn.onclick = async () => {
+  if (!document.fullscreenElement) {
+    try { await viewer.requestFullscreen(); } catch(e) {}
+  } else {
+    try { await document.exitFullscreen(); } catch(e) {}
+  }
+};
