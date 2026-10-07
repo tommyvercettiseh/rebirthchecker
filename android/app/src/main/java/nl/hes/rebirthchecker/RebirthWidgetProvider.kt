@@ -28,6 +28,7 @@ class RebirthWidgetProvider : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         ids.forEach { updateWidget(context, manager, it) }
+        syncStatus(context)
         scheduleNext(context)
     }
 
@@ -43,9 +44,18 @@ class RebirthWidgetProvider : AppWidgetProvider() {
                 ids.forEach {
                     try { updateWidget(context, manager, it) } catch (_: Throwable) {}
                 }
+                syncStatus(context)
                 scheduleNext(context)
             } catch (_: Throwable) {
             }
+        }
+
+        private fun syncStatus(context: Context) {
+            if (!RotationState.isCalibrated(context)) {
+                RebirthStatusNotification.hide(context)
+                return
+            }
+            RebirthStatusNotification.sync(context, RotationState.snapshot(context))
         }
 
         private fun updateWidget(context: Context, manager: AppWidgetManager, id: Int) {
